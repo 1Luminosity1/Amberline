@@ -133,6 +133,13 @@ button.on { color: var(--text); border-color: var(--dim); }
 #top { display: flex; align-items: stretch; gap: 6px; padding: 0 10px 0 0; border-bottom: 1px solid var(--line); min-height: 36px; }
 #top > button { align-self: center; }
 .spacer { flex: 1; }
+#btn-convert {
+  align-self: center; font-size: 11px; color: var(--accent);
+  border: 1px solid rgba(240, 168, 117, 0.4); padding: 2px 8px; margin-left: 6px;
+}
+#btn-convert:hover {
+  background: var(--raised); border-color: var(--accent);
+}
 
 #tabs { display: flex; overflow-x: auto; scrollbar-width: none; min-width: 0; }
 #tabs::-webkit-scrollbar { display: none; }
@@ -195,14 +202,23 @@ details.tool pre { margin: 0; white-space: pre-wrap; word-break: break-word; max
 #composer { padding: 10px 16px 14px; background: var(--bg); }
 #composer > * { max-width: 820px; margin-left: auto; margin-right: auto; display: block; }
 .input-wrap {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-bright);
   background: var(--surface);
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
   display: flex;
   flex-direction: column;
 }
 .input-wrap:focus-within {
-  border-color: var(--line-bright);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.input-wrap.running {
+  border-color: var(--accent);
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--accent); box-shadow: 0 0 4px rgba(240, 168, 117, 0.4); }
+  50% { border-color: rgba(240, 168, 117, 0.3); box-shadow: none; }
 }
 #input {
   width: 100%; resize: none; background: transparent; border: none;
@@ -259,6 +275,33 @@ dialog#settings[open] { display: flex; flex-direction: column; }
 .line select { flex: 1; min-width: 0; }
 #s-status { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px; border-top: 1px solid var(--line); }
+
+/* update dialog */
+dialog#update-dialog {
+  width: min(460px, 92vw); padding: 22px; border: 1px solid var(--line-bright);
+}
+.update-badge {
+  display: inline-block; font-size: 10px; letter-spacing: 0.8px; font-weight: 600;
+  color: var(--accent); background: rgba(240, 168, 117, 0.1); border: 1px solid rgba(240, 168, 117, 0.3);
+  padding: 2px 6px; margin-bottom: 8px;
+}
+.update-box h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--text); }
+.update-notes {
+  color: var(--dim); font-size: 12px; max-height: 120px; overflow-y: auto;
+  border: 1px solid var(--line); padding: 8px 10px; background: var(--bg);
+  white-space: pre-wrap; margin-bottom: 14px;
+}
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.progress-bar { width: 100%; height: 4px; background: var(--line); overflow: hidden; margin-bottom: 8px; }
+#u-progress-fill {
+  width: 40%; height: 100%; background: var(--accent);
+  animation: progress-indet 1.2s infinite ease-in-out;
+}
+@keyframes progress-indet {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.update-progress span { font-size: 11px; color: var(--dim); display: block; margin-bottom: 12px; }
 
 @media (max-width: 720px) {
   #side, #panel { display: none; }

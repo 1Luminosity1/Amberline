@@ -21,6 +21,7 @@ pub struct Session {
     pub updated: u64,
     pub history: Vec<Value>,
     pub summaries: Vec<Summary>,
+    pub kind: String,
     #[serde(skip)]
     pub running: bool,
 }
@@ -32,6 +33,7 @@ pub struct SessionInfo {
     pub workspace: String,
     pub created: u64,
     pub updated: u64,
+    pub kind: String,
     pub running: bool,
     pub runs: usize,
 }
@@ -45,12 +47,20 @@ pub struct SessionData {
 
 impl Session {
     pub fn info(&self) -> SessionInfo {
+        let kind = if !self.kind.is_empty() {
+            self.kind.clone()
+        } else if self.workspace.is_empty() {
+            "chat".to_string()
+        } else {
+            "agent".to_string()
+        };
         SessionInfo {
             id: self.id.clone(),
             title: self.title.clone(),
             workspace: self.workspace.clone(),
             created: self.created,
             updated: self.updated,
+            kind,
             running: self.running,
             runs: self.summaries.len(),
         }

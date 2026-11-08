@@ -30,7 +30,7 @@ interface Stats {
   by_day: Record<string, Totals>; by_tool: Record<string, ToolStat>;
 }
 interface Entry { name: string; is_dir: boolean }
-interface SessionInfo { id: string; title: string; workspace: string; created: number; updated: number; running: boolean; runs: number }
+interface SessionInfo { id: string; title: string; workspace: string; kind: string; created: number; updated: number; running: boolean; runs: number }
 interface SessionData { info: SessionInfo; history: any[]; summaries: Summary[] }
 type Ev =
   | { type: "text"; delta: string }
@@ -76,7 +76,7 @@ function loadStore(): Store {
       return { active: p.id, autoApprove: !!old.autoApprove, fontSize: 13, items: [p] };
     }
   } catch { /* use defaults */ }
-  const p = newProfile("deepseek");
+  const p: Profile = { id: uid(), name: "None", baseUrl: "", apiKey: "", model: "", priceIn: "", priceOut: "" };
   return { active: p.id, autoApprove: false, fontSize: 13, items: [p] };
 }
 let store = loadStore();
@@ -129,7 +129,7 @@ const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 /* ================= sessions ================= */
 interface Seg { kind: "text" | "reason"; el: HTMLElement; buf: string }
 interface UI {
-  id: string; title: string; workspace: string; running: boolean; hasMessages: boolean; loaded: boolean;
+  id: string; title: string; workspace: string; kind: "chat" | "agent"; running: boolean; hasMessages: boolean; loaded: boolean;
   feed: HTMLElement; timeline: HTMLElement; assistant: HTMLElement | null; seg: Seg | null;
   tools: Map<string, HTMLDetailsElement>; t0: number; summaries: Summary[];
 }
@@ -137,9 +137,14 @@ const sessions = new Map<string, UI>();
 let order: string[] = [];
 let activeId = "";
 const cur = () => sessions.get(activeId);
+let currentSpace: "chats" | "projects" = (localStorage.getItem("amberline.space") as "chats" | "projects") || "chats";
 
 function showEmpty(ui: UI) {
-  ui.feed.innerHTML = `<div class="empty"><b>Amberline</b><br>Describe a task. The agent can read, edit and run commands in this session's folder.</div>`;
+  if (ui.kind === "chat") {
+    ui.feed.innerHTML = `<div class="empty"><b>Amberline Chat</b><br>Ask anything. Pure conversational mode without folder access.<br>Click "Connect Project" above if you want to turn this into a coding agent.</div>`;
+  } else {
+    ui.feed.innerHTML = `<div class="empty"><b>Amberline Agent</b><br>Describe a task. The agent can read, edit files and run commands in <code>${esc(baseName(ui.workspace))}</code>.</div>`;
+  }
 }
 
 function makeUI(info: SessionInfo): UI {
@@ -147,8 +152,9 @@ function makeUI(info: SessionInfo): UI {
   const timeline = el("div", "timeline hidden");
   feeds.appendChild(feed);
   timelines.appendChild(timeline);
+  const kind = (info.kind as "chat" | "agent") || (info.workspace ? "agent" : "chat");
   const ui: UI = {
-    id: info.id, title: info.title, workspace: info.workspace, running: info.running,
+    id: info.id, title: info.title, workspace: info.workspace, kind, running: info.running,
     hasMessages: info.runs > 0, loaded: false, feed, timeline, assistant: null, seg: null,
     tools: new Map(), t0: 0, summaries: [],
   };
@@ -160,12 +166,18 @@ function makeUI(info: SessionInfo): UI {
 
 function renderTabs() {
   tabsEl.innerHTML = "";
-  for (const id of order) {
+  const filtered = order.filter(id => {
+    const ui = sessions.get(id);
+    if (!ui) return false;
+    return currentSpace === "chats" ? ui.kind === "chat" : ui.kind === "agent";
+  });
+
+  for (const id of filtered) {
     const ui = sessions.get(id)!;
     const tab = el("div", `tab${id === activeId ? " active" : ""}${ui.running ? " running" : ""}`);
     const title = el("span", "t-title");
-    title.textContent = ui.title || "New session";
-    title.title = ui.workspace;
+    title.textContent = ui.title || (ui.kind === "chat" ? "New chat" : "New session");
+    title.title = ui.workspace || "General chat";
     const x = el("button", "t-x", "×");
     x.title = "Close session";
     tab.append(el("span", "dot"), title, x);
@@ -174,6 +186,16 @@ function renderTabs() {
     title.ondblclick = e => { e.stopPropagation(); startRename(ui, title); };
     x.onclick = e => { e.stopPropagation(); closeSession(id); };
     tabsEl.appendChild(tab);
+  }
+
+  const curUI = cur();
+  const convertBtn = $("btn-convert");
+  if (convertBtn) {
+    if (curUI && curUI.kind === "chat") {
+      convertBtn.classList.remove("hidden");
+    } else {
+      convertBtn.classList.add("hidden");
+    }
   }
 }
 
@@ -241,6 +263,7 @@ async function activate(id: string) {
   if (!ui) return;
   activeId = id;
   localStorage.setItem("amberline.active", id);
+  localStorage.setItem(`amberline.active.${ui.kind}`, id);
   for (const [k, u] of sessions) {
     u.feed.classList.toggle("hidden", k !== id);
     u.timeline.classList.toggle("hidden", k !== id);
@@ -256,8 +279,20 @@ async function activate(id: string) {
   input.focus();
 }
 
-async function newSession(workspace?: string) {
-  const info = await invoke<SessionInfo>("create_session", { workspace: workspace ?? null });
+async function newSession(workspace?: string, kind?: string) {
+  const k = kind ?? (currentSpace === "chats" ? "chat" : "agent");
+  let ws = workspace ?? null;
+  if (k === "agent" && !ws) {
+    const prev = Array.from(sessions.values()).find(u => u.kind === "agent" && u.workspace);
+    if (prev) {
+      ws = prev.workspace;
+    } else {
+      const dir = await open({ directory: true });
+      if (typeof dir !== "string") return;
+      ws = dir;
+    }
+  }
+  const info = await invoke<SessionInfo>("create_session", { workspace: k === "chat" ? null : ws, kind: k });
   const ui = makeUI(info);
   ui.loaded = true;
   await activate(info.id);
@@ -270,29 +305,57 @@ async function closeSession(id: string) {
     const ok = await ask(`Delete session "${ui.title || "New session"}"? Its history will be removed.`, { title: "Delete session", kind: "warning" });
     if (!ok) return;
   }
-  if (order.length === 1) await newSession(ui.workspace);
+  if (order.length === 1) await newSession(ui.workspace, ui.kind);
   await invoke("close_session", { id });
   ui.feed.remove();
   ui.timeline.remove();
   sessions.delete(id);
   order = order.filter(x => x !== id);
-  if (activeId === id) { activeId = ""; await activate(order[order.length - 1]); }
-  else renderTabs();
+  if (activeId === id) {
+    activeId = "";
+    const remainingInSpace = order.filter(x => {
+      const u = sessions.get(x);
+      return u && (currentSpace === "chats" ? u.kind === "chat" : u.kind === "agent");
+    });
+    if (remainingInSpace.length) {
+      await activate(remainingInSpace[remainingInSpace.length - 1]);
+    } else {
+      await newSession();
+    }
+  } else {
+    renderTabs();
+  }
 }
 
 function setRunning(ui: UI, b: boolean) {
   ui.running = b;
   renderTabs();
-  if (ui.id === activeId) updateStatus();
+  if (ui.id === activeId) {
+    updateStatus();
+    const wrap = document.querySelector(".input-wrap");
+    if (wrap) wrap.classList.toggle("running", b);
+  }
 }
+
 function updateStatus() {
   const ui = cur();
   stateEl.textContent = ui?.running ? "working · Esc to stop" : "ready";
+  const wrap = document.querySelector(".input-wrap");
+  if (wrap) wrap.classList.toggle("running", !!ui?.running);
   showModel();
 }
+
 function showModel() {
   const p = activeProfile();
-  modelEl.textContent = `${p.name} · ${p.model || "no model"}`;
+  if (!p || p.name === "None" || !p.model) {
+    modelEl.textContent = "No provider (click Settings)";
+    modelEl.style.cursor = "pointer";
+    modelEl.onclick = () => openSettings("providers");
+  } else {
+    modelEl.textContent = `${p.name} · ${p.model}`;
+    modelEl.style.cursor = "pointer";
+    modelEl.onclick = () => openSettings("providers");
+  }
 }
 
 /* ================= feed rendering ================= */
@@ -499,7 +562,11 @@ async function send() {
   const text = input.value.trim();
   if (!ui || !text || ui.running) return;
   const prof = activeProfile();
-  if (!prof.baseUrl || !prof.model || (!prof.apiKey && !isLocal(prof.baseUrl))) { openSettings("providers"); return; }
+  if (!prof.baseUrl || !prof.model || (!prof.apiKey && !isLocal(prof.baseUrl))) {
+    await message("Please configure an AI provider and model in Settings first.", { title: "No Provider Configured", kind: "info" });
+    openSettings("providers");
+    return;
+  }
   input.value = ""; autosize();
   addUser(ui, text);
   ui.timeline.innerHTML = ""; ui.tools.clear();
@@ -524,30 +591,88 @@ input.addEventListener("keydown", e => {
 window.addEventListener("keydown", e => {
   const ui = cur();
   if (e.key === "Escape" && ui?.running && !(e.target as HTMLElement).isContentEditable) invoke("stop", { sessionId: ui.id });
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "t") { e.preventDefault(); newSession(ui?.workspace); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "t") {
+    e.preventDefault();
+    newSession(undefined, currentSpace === "chats" ? "chat" : "agent");
+  }
 });
-$("btn-add").onclick = () => newSession(cur()?.workspace);
+$("btn-add").onclick = () => newSession(undefined, currentSpace === "chats" ? "chat" : "agent");
+
+const btnConvert = $("btn-convert");
+if (btnConvert) {
+  btnConvert.onclick = async () => {
+    const ui = cur();
+    if (!ui || ui.kind !== "chat") return;
+    const dir = await open({ directory: true });
+    if (typeof dir !== "string") return;
+    try {
+      const updated = await invoke<SessionInfo>("convert_to_agent", { id: ui.id, workspace: dir });
+      ui.kind = "agent";
+      ui.workspace = updated.workspace;
+      setSpace("projects", false);
+      renderTabs();
+      await refreshWorkspace();
+      input.focus();
+    } catch (e) {
+      await message(String(e), { title: "Cannot connect project", kind: "error" });
+    }
+  };
+}
 
 /* ================= window controls & space switcher ================= */
 $("win-min").onclick = () => invoke("win_minimize");
 $("win-max").onclick = () => invoke("win_maximize");
 $("win-close").onclick = () => invoke("win_close");
 
+const titlebarEl = $("titlebar");
+titlebarEl.addEventListener("mousedown", e => {
+  if (e.buttons === 1 && (e.target as HTMLElement).closest("button") === null) {
+    invoke("win_start_drag");
+  }
+});
+titlebarEl.addEventListener("dblclick", e => {
+  if ((e.target as HTMLElement).closest("button") === null) {
+    invoke("win_maximize");
+  }
+});
+
 const modeChats = $("mode-chats");
 const modeProjects = $("mode-projects");
 const sideEl = $("side");
 
-modeChats.onclick = () => {
-  modeChats.classList.add("active");
-  modeProjects.classList.remove("active");
-  sideEl.classList.add("hidden");
-};
+function setSpace(space: "chats" | "projects", activateDefault = true) {
+  currentSpace = space;
+  localStorage.setItem("amberline.space", space);
+  modeChats.classList.toggle("active", space === "chats");
+  modeProjects.classList.toggle("active", space === "projects");
+  sideEl.classList.toggle("hidden", space === "chats");
 
-modeProjects.onclick = () => {
-  modeProjects.classList.add("active");
-  modeChats.classList.remove("active");
-  sideEl.classList.remove("hidden");
-};
+  renderTabs();
+
+  if (activateDefault) {
+    const curUI = cur();
+    const matchesCurrent = curUI && (space === "chats" ? curUI.kind === "chat" : curUI.kind === "agent");
+    if (!matchesCurrent) {
+      const savedId = localStorage.getItem(`amberline.active.${space}`);
+      const candidates = order.filter(id => {
+        const u = sessions.get(id);
+        return u && (space === "chats" ? u.kind === "chat" : u.kind === "agent");
+      });
+      if (savedId && candidates.includes(savedId)) {
+        activate(savedId);
+      } else if (candidates.length > 0) {
+        activate(candidates[candidates.length - 1]);
+      } else {
+        newSession(undefined, space === "chats" ? "chat" : "agent");
+      }
+    } else {
+      if (curUI) refreshWorkspace();
+    }
+  }
+}
+
+modeChats.onclick = () => setSpace("chats");
+modeProjects.onclick = () => setSpace("projects");
 
 /* ================= file tree ================= */
 async function loadDir(rel: string, box: HTMLElement, depth: number) {
@@ -578,14 +703,25 @@ async function loadDir(rel: string, box: HTMLElement, depth: number) {
 async function refreshWorkspace() {
   const ui = cur();
   if (!ui) return;
-  wsBtn.textContent = baseName(ui.workspace);
-  wsBtn.title = ui.workspace;
-  await loadDir("", treeEl, 0);
+  if (ui.kind === "chat" || !ui.workspace) {
+    wsBtn.textContent = "no folder connected";
+    wsBtn.title = "Chat mode · No folder connected";
+    treeEl.innerHTML = `<div class="row" style="color:var(--dim);padding:8px 10px;font-style:italic">Chat mode · No project files</div>`;
+  } else {
+    wsBtn.textContent = baseName(ui.workspace);
+    wsBtn.title = ui.workspace;
+    await loadDir("", treeEl, 0);
+  }
 }
 wsBtn.onclick = async () => {
   const dir = await open({ directory: true });
   if (typeof dir !== "string") return;
-  try { await newSession(dir); } catch (e) { await message(String(e), { title: "Cannot open folder", kind: "error" }); }
+  try {
+    await newSession(dir, "agent");
+    setSpace("projects", false);
+  } catch (e) {
+    await message(String(e), { title: "Cannot open folder", kind: "error" });
+  }
 };
 
 /* ================= settings (tabbed, easy to extend) ================= */
@@ -608,7 +744,54 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
-const APP_VERSION = "0.1.3";
+const APP_VERSION = "0.1.4";
+
+const updateDlg = $<HTMLDialogElement>("update-dialog");
+let pendingUpdate: any = null;
+
+$("u-later").onclick = () => {
+  updateDlg.close();
+};
+
+$("u-install").onclick = async () => {
+  if (!pendingUpdate) return;
+  const progressBox = $("u-progress");
+  const actionsBox = $("u-actions");
+  const statusTxt = $("u-status");
+
+  actionsBox.classList.add("hidden");
+  progressBox.classList.remove("hidden");
+  statusTxt.textContent = "Downloading & installing update…";
+
+  try {
+    let downloaded = 0;
+    let contentLength = 0;
+    await pendingUpdate.downloadAndInstall((event: any) => {
+      switch (event.event) {
+        case "Started":
+          contentLength = event.data?.contentLength || 0;
+          statusTxt.textContent = `Downloading update (${contentLength ? (contentLength / 1024 / 1024).toFixed(1) + " MB" : "…"})`;
+          break;
+        case "Progress":
+          downloaded += event.data?.chunkLength || 0;
+          if (contentLength > 0) {
+            const pct = Math.min(100, Math.round((downloaded / contentLength) * 100));
+            statusTxt.textContent = `Downloading… ${pct}%`;
+          }
+          break;
+        case "Finished":
+          statusTxt.textContent = "Update installed. Restarting Amberline…";
+          break;
+      }
+    });
+    statusTxt.textContent = "Restarting Amberline…";
+    await relaunch();
+  } catch (e) {
+    statusTxt.textContent = `Failed: ${e}`;
+    actionsBox.classList.remove("hidden");
+    await message(String(e), { title: "Update failed", kind: "error" });
+  }
+};
 
 async function checkForUpdates(silent = false) {
   const statusEl = document.getElementById("g-update-status");
@@ -617,15 +800,12 @@ async function checkForUpdates(silent = false) {
     const update = await check();
     if (update) {
       if (statusEl) statusEl.textContent = `New version ${update.version} available!`;
-      const yes = await ask(
-        `A new version of Amberline (${update.version}) is available!\n\nRelease notes:\n${update.body || "Bug fixes and improvements"}\n\nInstall and restart now?`,
-        { title: "Update Amberline", kind: "info" }
-      );
-      if (yes) {
-        if (statusEl) statusEl.textContent = "Downloading & installing…";
-        await update.downloadAndInstall();
-        await relaunch();
-      }
+      pendingUpdate = update;
+      $("u-version").textContent = `Version ${update.version} is ready`;
+      $("u-notes").textContent = update.body || "Bug fixes and improvements.";
+      $("u-progress").classList.add("hidden");
+      $("u-actions").classList.remove("hidden");
+      updateDlg.showModal();
     } else {
       if (statusEl) statusEl.textContent = `Amberline is up to date (v${APP_VERSION})`;
       if (!silent) {
@@ -818,10 +998,32 @@ listen<Env>("agent-event", e => onEvent(e.payload));
 applyFont();
 setPanel(localStorage.getItem("amberline.panel") !== "0");
 (async () => {
+  const initialSpace = (localStorage.getItem("amberline.space") as "chats" | "projects") || "chats";
+  currentSpace = initialSpace;
+  modeChats.classList.toggle("active", initialSpace === "chats");
+  modeProjects.classList.toggle("active", initialSpace === "projects");
+  sideEl.classList.toggle("hidden", initialSpace === "chats");
+
   const infos = await invoke<SessionInfo[]>("list_sessions");
   for (const i of infos) makeUI(i);
-  if (!order.length) { await newSession(); return; }
-  const saved = localStorage.getItem("amberline.active") || "";
-  await activate(order.includes(saved) ? saved : order[order.length - 1]);
+  if (!order.length) {
+    await newSession(undefined, initialSpace === "chats" ? "chat" : "agent");
+    return;
+  }
+
+  const savedForSpace = localStorage.getItem(`amberline.active.${initialSpace}`);
+  const matching = order.filter(id => {
+    const u = sessions.get(id);
+    return u && (initialSpace === "chats" ? u.kind === "chat" : u.kind === "agent");
+  });
+
+  if (savedForSpace && matching.includes(savedForSpace)) {
+    await activate(savedForSpace);
+  } else if (matching.length > 0) {
+    await activate(matching[matching.length - 1]);
+  } else {
+    await newSession(undefined, initialSpace === "chats" ? "chat" : "agent");
+  }
+
   setTimeout(() => { checkForUpdates(true); }, 3000);
 })();

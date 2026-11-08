@@ -13,16 +13,20 @@ use tokio::sync::oneshot;
 
 const MAX_STEPS: u32 = 30;
 
-fn system_prompt(ws: &Path) -> String {
-    format!(
-        "You are Amberline, a coding agent working inside the user's project.\n\
-         Workspace: {}\nOS: {}\n\n\
-         Use the tools to inspect and change files and to run commands. Read a file before editing it. \
-         Prefer small exact edits (edit_file) over rewriting whole files. Keep answers short and concrete. \
-         When a task is finished, say what you changed.",
-        ws.display(),
-        std::env::consts::OS
-    )
+fn system_prompt(ws: &Path, is_chat: bool) -> String {
+    if is_chat {
+        "You are Amberline, a helpful, thoughtful, and accurate AI assistant. Answer clearly and concisely.".to_string()
+    } else {
+        format!(
+            "You are Amberline, a coding agent working inside the user's project.\n\
+             Workspace: {}\nOS: {}\n\n\
+             Use the tools to inspect and change files and to run commands. Read a file before editing it. \
+             Prefer small exact edits (edit_file) over rewriting whole files. Keep answers short and concrete. \
+             When a task is finished, say what you changed.",
+            ws.display(),
+            std::env::consts::OS
+        )
+    }
 }
 
 async fn ask(app: &AppHandle, st: &AppState, sid: &str, id: &str, name: &str, args: &Value) -> bool {
@@ -57,8 +61,9 @@ pub async fn run(
     let cancel = Arc::new(AtomicBool::new(false));
     st.cancels.lock().unwrap().insert(sid.to_string(), cancel.clone());
 
+    let is_chat = workspace.as_os_str().is_empty();
     if history.is_empty() {
-        history.push(json!({ "role": "system", "content": system_prompt(&workspace) }));
+        history.push(json!({ "role": "system", "content": system_prompt(&workspace, is_chat) }));
     }
     history.push(json!({ "role": "user", "content": prompt }));
 
@@ -70,7 +75,7 @@ pub async fn run(
         ..Default::default()
     };
     let client = reqwest::Client::new();
-    let defs = tools::definitions();
+    let defs = if is_chat { json!([]) } else { tools::definitions() };
 
     for step in 0..MAX_STEPS {
         if cancel.load(Ordering::SeqCst) {

@@ -154,21 +154,56 @@ fn create_session(
     app: AppHandle,
     state: State<'_, AppState>,
     workspace: Option<String>,
+    kind: Option<String>,
 ) -> Result<SessionInfo, String> {
+    let k = kind.unwrap_or_else(|| {
+        if workspace.as_deref().map_or(false, |w| !w.is_empty()) {
+            "agent".to_string()
+        } else {
+            "chat".to_string()
+        }
+    });
     let ws = match workspace {
-        Some(w) => {
+        Some(w) if !w.is_empty() => {
             if !PathBuf::from(&w).is_dir() {
                 return Err("Not a directory".into());
             }
             w
         }
-        None => state.default_workspace.lock().unwrap().to_string_lossy().to_string(),
+        _ => String::new(),
     };
     let now = sessions::now_ms();
-    let s = Session { id: sessions::new_id(), workspace: ws, created: now, updated: now, ..Default::default() };
+    let s = Session {
+        id: sessions::new_id(),
+        workspace: ws,
+        kind: k,
+        created: now,
+        updated: now,
+        ..Default::default()
+    };
     let info = s.info();
     sessions::save(&app, &s);
     state.sessions.lock().unwrap().insert(s.id.clone(), s);
+    Ok(info)
+}
+
+#[tauri::command]
+fn convert_to_agent(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    workspace: String,
+) -> Result<SessionInfo, String> {
+    if !PathBuf::from(&workspace).is_dir() {
+        return Err("Not a directory".into());
+    }
+    let mut g = state.sessions.lock().unwrap();
+    let s = g.get_mut(&id).ok_or_else(|| "No such session".to_string())?;
+    s.kind = "agent".to_string();
+    s.workspace = workspace;
+    s.updated = sessions::now_ms();
+    let info = s.info();
+    sessions::save(&app, s);
     Ok(info)
 }
 
@@ -301,6 +336,11 @@ fn win_maximize(window: tauri::Window) {
 }
 
 #[tauri::command]
+fn win_start_drag(window: tauri::Window) {
+    let _ = window.start_dragging();
+}
+
+#[tauri::command]
 fn win_close(window: tauri::Window) {
     let _ = window.close();
 }
@@ -331,6 +371,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_sessions,
             create_session,
+            convert_to_agent,
             get_session,
             rename_session,
             close_session,
@@ -343,7 +384,8 @@ pub fn run() {
             reset_stats,
             win_minimize,
             win_maximize,
-            win_close
+            win_close,
+            win_start_drag
         ])
         .run(tauri::generate_context!())
         .expect("error while running Amberline");

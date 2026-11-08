@@ -32,6 +32,7 @@
         <header id="top">
           <div id="tabs"></div>
           <button id="btn-add" title="New session (Ctrl+T)">+</button>
+          <button id="btn-convert" class="hidden" title="Connect a folder and turn this chat into an agent project">Connect Project</button>
           <span class="spacer"></span>
           <button id="btn-stats">Stats</button>
           <button id="btn-settings">Settings</button>
@@ -73,6 +74,22 @@
       <div class="actions">
         <button type="button" id="s-cancel">Cancel</button>
         <button type="button" id="s-save" class="primary">Save</button>
+      </div>
+    </dialog>
+
+    <dialog id="update-dialog">
+      <div class="update-box">
+        <div class="update-badge">UPDATE AVAILABLE</div>
+        <h3 id="u-version">Version 0.1.x is ready</h3>
+        <div id="u-notes" class="update-notes"></div>
+        <div id="u-progress" class="update-progress hidden">
+          <div class="progress-bar"><div id="u-progress-fill"></div></div>
+          <span id="u-status">Downloading &amp; installing update…</span>
+        </div>
+        <div class="update-actions" id="u-actions">
+          <button type="button" id="u-later">Later</button>
+          <button type="button" id="u-install" class="primary">Update &amp; Restart</button>
+        </div>
       </div>
     </dialog>
 
