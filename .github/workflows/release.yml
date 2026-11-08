@@ -49,3 +49,15 @@ jobs:
           releaseBody: "Installers for Windows and Linux are attached below."
           releaseDraft: false
           prerelease: false
+
+  cleanup:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep only latest 3 releases
+        uses: dev-drprasad/delete-older-releases@v0.3.3
+        with:
+          keep_latest: 3
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
