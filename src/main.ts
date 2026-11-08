@@ -587,6 +587,8 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
+const APP_VERSION = "0.1.1";
+
 async function checkForUpdates(silent = false) {
   const statusEl = document.getElementById("g-update-status");
   if (statusEl && !silent) statusEl.textContent = "Checking for updates…";
@@ -604,7 +606,7 @@ async function checkForUpdates(silent = false) {
         await relaunch();
       }
     } else {
-      if (statusEl) statusEl.textContent = "Amberline is up to date (v0.1.0)";
+      if (statusEl) statusEl.textContent = `Amberline is up to date (v${APP_VERSION})`;
       if (!silent) {
         await message("You are using the latest version of Amberline.", { title: "Up to date", kind: "info" });
       }
@@ -626,7 +628,7 @@ const generalPane: Pane = {
       <h3 style="margin-top: 18px">Updates</h3>
       <div class="line">
         <button type="button" id="g-check-updates">Check for updates</button>
-        <span id="g-update-status" class="note">v0.1.0</span>
+        <span id="g-update-status" class="note">v${APP_VERSION}</span>
       </div>`;
     fld("g-auto").checked = draft.autoApprove;
     fld("g-font").value = String(draft.fontSize);
