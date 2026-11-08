@@ -6,6 +6,22 @@
     <title>Amberline</title>
   </head>
   <body>
+    <header id="titlebar" data-tauri-drag-region>
+      <div class="titlebar-left">
+        <span class="app-dot"></span>
+        <span class="app-title">Amberline</span>
+        <div class="space-switch">
+          <button type="button" class="space-btn active" id="mode-chats">Chats</button>
+          <button type="button" class="space-btn" id="mode-projects">Projects</button>
+        </div>
+      </div>
+      <div class="window-controls">
+        <button type="button" class="win-btn" id="win-min" title="Minimize">—</button>
+        <button type="button" class="win-btn" id="win-max" title="Maximize">□</button>
+        <button type="button" class="win-btn close" id="win-close" title="Close">✕</button>
+      </div>
+    </header>
+
     <div id="app">
       <aside id="side">
         <div class="side-head"><button id="ws" title="Open a folder in a new session">open folder</button></div>
@@ -23,8 +39,10 @@
         </header>
         <div id="feeds"></div>
         <div id="composer">
-          <textarea id="input" rows="1" placeholder="Ask anything. Use @file to reference a file. Enter sends, Shift+Enter adds a line."></textarea>
-          <div class="hint"><span id="state">ready</span><span id="model"></span></div>
+          <div class="input-wrap">
+            <textarea id="input" rows="1" placeholder="Ask anything. Use @file to reference a file. Enter sends, Shift+Enter adds a line."></textarea>
+            <div class="hint"><span id="state">ready</span><span id="model"></span></div>
+          </div>
         </div>
       </main>
 

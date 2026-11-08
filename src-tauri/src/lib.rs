@@ -286,6 +286,25 @@ fn reset_stats(app: AppHandle) {
     stats::reset(&app);
 }
 
+#[tauri::command]
+fn win_minimize(window: tauri::Window) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+fn win_maximize(window: tauri::Window) {
+    if window.is_maximized().unwrap_or(false) {
+        let _ = window.unmaximize();
+    } else {
+        let _ = window.maximize();
+    }
+}
+
+#[tauri::command]
+fn win_close(window: tauri::Window) {
+    let _ = window.close();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let home = std::env::var("HOME")
@@ -321,7 +340,10 @@ pub fn run() {
             approve,
             test_connection,
             get_stats,
-            reset_stats
+            reset_stats,
+            win_minimize,
+            win_maximize,
+            win_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running Amberline");

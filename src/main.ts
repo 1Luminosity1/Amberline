@@ -528,6 +528,27 @@ window.addEventListener("keydown", e => {
 });
 $("btn-add").onclick = () => newSession(cur()?.workspace);
 
+/* ================= window controls & space switcher ================= */
+$("win-min").onclick = () => invoke("win_minimize");
+$("win-max").onclick = () => invoke("win_maximize");
+$("win-close").onclick = () => invoke("win_close");
+
+const modeChats = $("mode-chats");
+const modeProjects = $("mode-projects");
+const sideEl = $("side");
+
+modeChats.onclick = () => {
+  modeChats.classList.add("active");
+  modeProjects.classList.remove("active");
+  sideEl.classList.add("hidden");
+};
+
+modeProjects.onclick = () => {
+  modeProjects.classList.add("active");
+  modeChats.classList.remove("active");
+  sideEl.classList.remove("hidden");
+};
+
 /* ================= file tree ================= */
 async function loadDir(rel: string, box: HTMLElement, depth: number) {
   const ui = cur();

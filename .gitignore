@@ -11,4 +11,8 @@ skills/
 # Tauri signing keys
 .tauri/
 
+# Mockups
+preview-mockup.html
+
+
 
