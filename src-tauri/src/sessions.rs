@@ -1,0 +1,119 @@
+use crate::Summary;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tauri::{AppHandle, Manager};
+
+/// One chat session. Each session has its own history and workspace folder
+/// and is stored as its own file in the app data folder.
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct Session {
+    pub id: String,
+    pub title: String,
+    pub workspace: String,
+    pub created: u64,
+    pub updated: u64,
+    pub history: Vec<Value>,
+    pub summaries: Vec<Summary>,
+    #[serde(skip)]
+    pub running: bool,
+}
+
+#[derive(Serialize, Clone)]
+pub struct SessionInfo {
+    pub id: String,
+    pub title: String,
+    pub workspace: String,
+    pub created: u64,
+    pub updated: u64,
+    pub running: bool,
+    pub runs: usize,
+}
+
+#[derive(Serialize)]
+pub struct SessionData {
+    pub info: SessionInfo,
+    pub history: Vec<Value>,
+    pub summaries: Vec<Summary>,
+}
+
+impl Session {
+    pub fn info(&self) -> SessionInfo {
+        SessionInfo {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            workspace: self.workspace.clone(),
+            created: self.created,
+            updated: self.updated,
+            running: self.running,
+            runs: self.summaries.len(),
+        }
+    }
+}
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+pub fn new_id() -> String {
+    format!("{:x}{:02x}", now_ms(), COUNTER.fetch_add(1, Ordering::Relaxed) % 256)
+}
+
+pub fn dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("sessions"))
+}
+
+fn safe(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+pub fn save(app: &AppHandle, s: &Session) {
+    if !safe(&s.id) {
+        return;
+    }
+    if let Some(d) = dir(app) {
+        let _ = std::fs::create_dir_all(&d);
+        if let Ok(text) = serde_json::to_string(s) {
+            let _ = std::fs::write(d.join(format!("{}.json", s.id)), text);
+        }
+    }
+}
+
+pub fn remove(app: &AppHandle, id: &str) {
+    if !safe(id) {
+        return;
+    }
+    if let Some(d) = dir(app) {
+        let _ = std::fs::remove_file(d.join(format!("{id}.json")));
+    }
+}
+
+pub fn load_all(dir: &Path) -> HashMap<String, Session> {
+    let mut out = HashMap::new();
+    let Ok(rd) = std::fs::read_dir(dir) else { return out };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().and_then(|x| x.to_str()) != Some("json") {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&p) {
+            if let Ok(s) = serde_json::from_str::<Session>(&text) {
+                if safe(&s.id) {
+                    out.insert(s.id.clone(), s);
+                }
+            }
+        }
+    }
+    out
+}

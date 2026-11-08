@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amberline</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside id="side">
+        <div class="side-head"><button id="ws" title="Open a folder in a new session">open folder</button></div>
+        <div id="tree"></div>
+      </aside>
+
+      <main id="main">
+        <header id="top">
+          <div id="tabs"></div>
+          <button id="btn-add" title="New session (Ctrl+T)">+</button>
+          <span class="spacer"></span>
+          <button id="btn-stats">Stats</button>
+          <button id="btn-settings">Settings</button>
+          <button id="btn-panel" title="Show or hide the activity panel">Activity</button>
+        </header>
+        <div id="feeds"></div>
+        <div id="composer">
+          <textarea id="input" rows="1" placeholder="Ask anything. Use @file to reference a file. Enter sends, Shift+Enter adds a line."></textarea>
+          <div class="hint"><span id="state">ready</span><span id="model"></span></div>
+        </div>
+      </main>
+
+      <aside id="panel">
+        <div class="panel-head"><span>Activity</span><button id="panel-close" title="Hide panel">Hide</button></div>
+        <div id="panel-body">
+          <details class="sec" open>
+            <summary>This session</summary>
+            <div id="panel-session"></div>
+          </details>
+          <details class="sec" open>
+            <summary>Timeline</summary>
+            <div id="timelines"></div>
+          </details>
+          <details class="sec" open>
+            <summary>Last run</summary>
+            <div id="panel-last"></div>
+          </details>
+        </div>
+      </aside>
+    </div>
+
+    <dialog id="settings">
+      <div class="set-wrap">
+        <nav id="set-nav"></nav>
+        <section id="set-pane"></section>
+      </div>
+      <div class="actions">
+        <button type="button" id="s-cancel">Cancel</button>
+        <button type="button" id="s-save" class="primary">Save</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
