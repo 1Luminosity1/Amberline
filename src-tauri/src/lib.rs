@@ -336,6 +336,13 @@ fn win_maximize(window: tauri::Window) {
 }
 
 #[tauri::command]
+fn win_fullscreen(window: tauri::Window) {
+    if let Ok(fs) = window.is_fullscreen() {
+        let _ = window.set_fullscreen(!fs);
+    }
+}
+
+#[tauri::command]
 fn win_start_drag(window: tauri::Window) {
     let _ = window.start_dragging();
 }
@@ -347,11 +354,6 @@ fn win_close(window: tauri::Window) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -364,7 +366,7 @@ pub fn run() {
                 sessions: StdMutex::new(loaded),
                 cancels: StdMutex::new(HashMap::new()),
                 approvals: StdMutex::new(HashMap::new()),
-                default_workspace: StdMutex::new(home.clone()),
+                default_workspace: StdMutex::new(PathBuf::new()),
             });
             Ok(())
         })
@@ -384,6 +386,7 @@ pub fn run() {
             reset_stats,
             win_minimize,
             win_maximize,
+            win_fullscreen,
             win_close,
             win_start_drag
         ])

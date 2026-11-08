@@ -47,9 +47,23 @@ pub struct SessionData {
 
 impl Session {
     pub fn info(&self) -> SessionInfo {
+        let is_home = if !self.workspace.is_empty() {
+            if let Some(h) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+                Path::new(&self.workspace) == Path::new(&h)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        let ws = if is_home && (self.kind.is_empty() || self.kind == "chat") {
+            String::new()
+        } else {
+            self.workspace.clone()
+        };
         let kind = if !self.kind.is_empty() {
             self.kind.clone()
-        } else if self.workspace.is_empty() {
+        } else if ws.is_empty() {
             "chat".to_string()
         } else {
             "agent".to_string()
@@ -57,7 +71,7 @@ impl Session {
         SessionInfo {
             id: self.id.clone(),
             title: self.title.clone(),
-            workspace: self.workspace.clone(),
+            workspace: ws,
             created: self.created,
             updated: self.updated,
             kind,
@@ -118,8 +132,14 @@ pub fn load_all(dir: &Path) -> HashMap<String, Session> {
             continue;
         }
         if let Ok(text) = std::fs::read_to_string(&p) {
-            if let Ok(s) = serde_json::from_str::<Session>(&text) {
+            if let Ok(mut s) = serde_json::from_str::<Session>(&text) {
                 if safe(&s.id) {
+                    if let Some(h) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+                        if !s.workspace.is_empty() && Path::new(&s.workspace) == Path::new(&h) {
+                            s.workspace = String::new();
+                            s.kind = "chat".to_string();
+                        }
+                    }
                     out.insert(s.id.clone(), s);
                 }
             }

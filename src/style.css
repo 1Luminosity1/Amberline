@@ -123,6 +123,7 @@ button.on { color: var(--text); border-color: var(--dim); }
 /* file sidebar */
 #side { width: 230px; border-right: 1px solid var(--line); display: flex; flex-direction: column; background: var(--surface); }
 .side-head { padding: 10px; border-bottom: 1px solid var(--line); }
+.side-tag { font-size: 10px; font-weight: 600; letter-spacing: 0.8px; color: var(--accent); margin-bottom: 6px; }
 #ws { width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 #tree { flex: 1; overflow: auto; padding: 6px 0; }
 #tree .row { padding: 1px 10px; cursor: pointer; white-space: pre; color: var(--dim); }

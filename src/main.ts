@@ -51,12 +51,17 @@ interface Settings {
   provider: string; keyId: string; priceIn: number | null; priceOut: number | null;
 }
 const PRESETS: Record<string, { name: string; baseUrl: string; model: string }> = {
+  gemini: { name: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
+  grok: { name: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", model: "grok-2-latest" },
   deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
-  openai: { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "" },
-  openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "" },
-  ollama: { name: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "" },
+  openai: { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
+  openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "anthropic/claude-3.5-sonnet" },
+  groq: { name: "Groq (Fast)", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
+  mistral: { name: "Mistral AI", baseUrl: "https://api.mistral.ai/v1", model: "codestral-latest" },
+  together: { name: "Together AI", baseUrl: "https://api.together.xyz/v1", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+  ollama: { name: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "qwen2.5-coder" },
   lmstudio: { name: "LM Studio (local)", baseUrl: "http://localhost:1234/v1", model: "" },
-  custom: { name: "Custom", baseUrl: "", model: "" },
+  custom: { name: "Custom (OpenAI-compatible)", baseUrl: "", model: "" },
 };
 const uid = () => Math.random().toString(36).slice(2, 8);
 const newProfile = (preset: string): Profile => ({ id: uid(), apiKey: "", priceIn: "", priceOut: "", ...PRESETS[preset] });
@@ -267,6 +272,11 @@ async function activate(id: string) {
   for (const [k, u] of sessions) {
     u.feed.classList.toggle("hidden", k !== id);
     u.timeline.classList.toggle("hidden", k !== id);
+  }
+  if (currentSpace === "chats" || ui.kind === "chat" || !ui.workspace) {
+    sideEl.classList.add("hidden");
+  } else {
+    sideEl.classList.remove("hidden");
   }
   renderTabs();
   if (!ui.loaded) {
@@ -591,6 +601,10 @@ input.addEventListener("keydown", e => {
 window.addEventListener("keydown", e => {
   const ui = cur();
   if (e.key === "Escape" && ui?.running && !(e.target as HTMLElement).isContentEditable) invoke("stop", { sessionId: ui.id });
+  if (e.key === "F11") {
+    e.preventDefault();
+    invoke("win_fullscreen");
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "t") {
     e.preventDefault();
     newSession(undefined, currentSpace === "chats" ? "chat" : "agent");
@@ -703,11 +717,13 @@ async function loadDir(rel: string, box: HTMLElement, depth: number) {
 async function refreshWorkspace() {
   const ui = cur();
   if (!ui) return;
-  if (ui.kind === "chat" || !ui.workspace) {
+  if (currentSpace === "chats" || ui.kind === "chat" || !ui.workspace) {
+    sideEl.classList.add("hidden");
     wsBtn.textContent = "no folder connected";
     wsBtn.title = "Chat mode · No folder connected";
-    treeEl.innerHTML = `<div class="row" style="color:var(--dim);padding:8px 10px;font-style:italic">Chat mode · No project files</div>`;
+    treeEl.innerHTML = "";
   } else {
+    sideEl.classList.remove("hidden");
     wsBtn.textContent = baseName(ui.workspace);
     wsBtn.title = ui.workspace;
     await loadDir("", treeEl, 0);
@@ -744,7 +760,7 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
-const APP_VERSION = "0.1.4";
+const APP_VERSION = "0.1.5";
 
 const updateDlg = $<HTMLDialogElement>("update-dialog");
 let pendingUpdate: any = null;

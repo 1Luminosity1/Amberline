@@ -17,7 +17,7 @@ fn system_prompt(ws: &Path, is_chat: bool) -> String {
     if is_chat {
         "You are Amberline, a helpful, thoughtful, and accurate AI assistant. Answer clearly and concisely.".to_string()
     } else {
-        format!(
+        let mut prompt = format!(
             "You are Amberline, a coding agent working inside the user's project.\n\
              Workspace: {}\nOS: {}\n\n\
              Use the tools to inspect and change files and to run commands. Read a file before editing it. \
@@ -25,7 +25,23 @@ fn system_prompt(ws: &Path, is_chat: bool) -> String {
              When a task is finished, say what you changed.",
             ws.display(),
             std::env::consts::OS
-        )
+        );
+
+        let candidates = [
+            ws.join(".amberline").join("instructions.md"),
+            ws.join("AGENTS.md"),
+            ws.join("AMBERLINE.md"),
+        ];
+        for candidate in &candidates {
+            if candidate.is_file() {
+                if let Ok(content) = std::fs::read_to_string(candidate) {
+                    prompt.push_str("\n\nProject Instructions:\n");
+                    prompt.push_str(&content);
+                    break;
+                }
+            }
+        }
+        prompt
     }
 }
 
