@@ -608,7 +608,7 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
-const APP_VERSION = "0.1.2";
+const APP_VERSION = "0.1.3";
 
 async function checkForUpdates(silent = false) {
   const statusEl = document.getElementById("g-update-status");
