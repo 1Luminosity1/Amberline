@@ -2,3 +2,13 @@ node_modules
 dist
 src-tauri/target
 src-tauri/gen
+
+# AI agent instructions & skills
+AGENTS.md
+skills/
+.agents/
+
+# Tauri signing keys
+.tauri/
+
+

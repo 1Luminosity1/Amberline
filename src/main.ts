@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ask, message, open } from "@tauri-apps/plugin-dialog";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./style.css";
 
 /* ================= types ================= */
@@ -585,14 +587,50 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
+async function checkForUpdates(silent = false) {
+  const statusEl = document.getElementById("g-update-status");
+  if (statusEl && !silent) statusEl.textContent = "Checking for updates…";
+  try {
+    const update = await check();
+    if (update) {
+      if (statusEl) statusEl.textContent = `New version ${update.version} available!`;
+      const yes = await ask(
+        `A new version of Amberline (${update.version}) is available!\n\nRelease notes:\n${update.body || "Bug fixes and improvements"}\n\nInstall and restart now?`,
+        { title: "Update Amberline", kind: "info" }
+      );
+      if (yes) {
+        if (statusEl) statusEl.textContent = "Downloading & installing…";
+        await update.downloadAndInstall();
+        await relaunch();
+      }
+    } else {
+      if (statusEl) statusEl.textContent = "Amberline is up to date (v0.1.0)";
+      if (!silent) {
+        await message("You are using the latest version of Amberline.", { title: "Up to date", kind: "info" });
+      }
+    }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = "Update check error";
+    if (!silent) {
+      await message(String(e), { title: "Update check failed", kind: "error" });
+    }
+  }
+}
+
 const generalPane: Pane = {
   id: "general", label: "General",
   render(root) {
     root.innerHTML = `<h3>General</h3>
       <label class="check"><input id="g-auto" type="checkbox"> Run edits and commands without asking</label>
-      <label>Font size (px)<input id="g-font" type="number" min="11" max="20" step="1"></label>`;
+      <label>Font size (px)<input id="g-font" type="number" min="11" max="20" step="1"></label>
+      <h3 style="margin-top: 18px">Updates</h3>
+      <div class="line">
+        <button type="button" id="g-check-updates">Check for updates</button>
+        <span id="g-update-status" class="note">v0.1.0</span>
+      </div>`;
     fld("g-auto").checked = draft.autoApprove;
     fld("g-font").value = String(draft.fontSize);
+    $("g-check-updates").onclick = () => checkForUpdates(false);
   },
   collect() {
     if (!document.getElementById("g-auto")) return;
@@ -762,4 +800,5 @@ setPanel(localStorage.getItem("amberline.panel") !== "0");
   if (!order.length) { await newSession(); return; }
   const saved = localStorage.getItem("amberline.active") || "";
   await activate(order.includes(saved) ? saved : order[order.length - 1]);
+  setTimeout(() => { checkForUpdates(true); }, 3000);
 })();

@@ -295,6 +295,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let loaded = sessions::dir(app.handle())
                 .map(|d| sessions::load_all(&d))
