@@ -26,7 +26,12 @@
       <aside id="side" class="hidden">
         <div class="side-head">
           <div class="side-tag">PROJECT WORKSPACE</div>
-          <button id="ws" title="Open a folder in a project session">open folder</button>
+          <div id="side-pname" class="side-pname" title="No project connected">No project</div>
+          <div class="side-actions-row">
+            <button type="button" id="ws" title="Open or switch folder">Switch</button>
+            <button type="button" id="ws-new" title="Create 1-click new project in Documents/Mistline/Projects">+ New</button>
+            <button type="button" id="ws-reveal" title="Show project folder in File Explorer">Files</button>
+          </div>
         </div>
         <div id="tree"></div>
       </aside>

@@ -303,11 +303,25 @@ async fn test_connection(settings: Settings) -> Result<Vec<String>, String> {
         return Err(format!("{status}: {}", text.chars().take(200).collect::<String>()));
     }
     let v: Value = serde_json::from_str(&text).map_err(|_| "Unexpected response from the server".to_string())?;
-    let mut ids: Vec<String> = v["data"]
-        .as_array()
-        .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
-        .unwrap_or_default();
+    let mut ids: Vec<String> = Vec::new();
+    if let Some(data) = v["data"].as_array() {
+        for m in data {
+            if let Some(id) = m["id"].as_str() {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    if ids.is_empty() {
+        if let Some(models) = v["models"].as_array() {
+            for m in models {
+                if let Some(name) = m["name"].as_str().or_else(|| m["id"].as_str()).or_else(|| m["model"].as_str()) {
+                    ids.push(name.to_string());
+                }
+            }
+        }
+    }
     ids.sort();
+    ids.dedup();
     Ok(ids)
 }
 
@@ -352,6 +366,77 @@ fn win_close(window: tauri::Window) {
     let _ = window.close();
 }
 
+#[tauri::command]
+fn get_default_projects_dir(app: AppHandle) -> Result<String, String> {
+    let base = app
+        .path()
+        .document_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| e.to_string())?;
+    let projects = base.join("Mistline").join("Projects");
+    let _ = std::fs::create_dir_all(&projects);
+    Ok(projects.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn create_project(app: AppHandle, name: Option<String>) -> Result<String, String> {
+    let base = app
+        .path()
+        .document_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| e.to_string())?;
+    let projects = base.join("Mistline").join("Projects");
+    let _ = std::fs::create_dir_all(&projects);
+
+    let raw_name = name.unwrap_or_default();
+    let trimmed = raw_name.trim();
+    let project_name = if !trimmed.is_empty() {
+        let clean: String = trimmed
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == ' ')
+            .collect();
+        let clean = clean.trim().to_string();
+        if clean.is_empty() { "Project-1".to_string() } else { clean }
+    } else {
+        let mut idx = 1;
+        loop {
+            let candidate = format!("Project-{idx}");
+            if !projects.join(&candidate).exists() {
+                break candidate;
+            }
+            idx += 1;
+        }
+    };
+
+    let p = projects.join(&project_name);
+    std::fs::create_dir_all(&p).map_err(|e| format!("Failed to create directory: {e}"))?;
+    let readme = p.join("README.md");
+    if !readme.exists() {
+        let _ = std::fs::write(&readme, format!("# {project_name}\n\nProject created with Mistline.\n"));
+    }
+    Ok(p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn open_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let cmd = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+        std::process::Command::new(cmd)
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -388,7 +473,10 @@ pub fn run() {
             win_maximize,
             win_fullscreen,
             win_close,
-            win_start_drag
+            win_start_drag,
+            get_default_projects_dir,
+            create_project,
+            open_in_explorer
         ])
         .run(tauri::generate_context!())
         .expect("error while running Mistline");

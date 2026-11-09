@@ -228,9 +228,195 @@ let activeId = "";
 const cur = () => sessions.get(activeId);
 let currentSpace: "chats" | "projects" = (getSaved("space") as "chats" | "projects") || "chats";
 
+/* ================= recent projects & workspace hub ================= */
+interface RecentProject {
+  path: string;
+  name: string;
+  lastOpened: number;
+}
+
+function getRecentProjects(): RecentProject[] {
+  try {
+    const raw = localStorage.getItem("mistline.recent_projects");
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function addRecentProject(dirPath: string) {
+  if (!dirPath) return;
+  const list = getRecentProjects().filter(p => p.path !== dirPath);
+  list.unshift({
+    path: dirPath,
+    name: baseName(dirPath),
+    lastOpened: Date.now(),
+  });
+  localStorage.setItem("mistline.recent_projects", JSON.stringify(list.slice(0, 15)));
+}
+
+function removeRecentProject(dirPath: string) {
+  const list = getRecentProjects().filter(p => p.path !== dirPath);
+  localStorage.setItem("mistline.recent_projects", JSON.stringify(list));
+}
+
+async function attachProject(ui: UI, path: string) {
+  try {
+    await invoke<SessionInfo>("convert_to_agent", { id: ui.id, workspace: path });
+    ui.workspace = path;
+    ui.kind = "agent";
+    addRecentProject(path);
+    await refreshWorkspace();
+    showEmpty(ui);
+    renderTabs();
+  } catch (e) {
+    await message(`Cannot connect to folder: ${e}`, { title: "Project error", kind: "error" });
+    removeRecentProject(path);
+    if (!ui.workspace) renderProjectHub(ui);
+  }
+}
+
+function renderProjectHub(ui: UI) {
+  const recents = getRecentProjects();
+  let recentsHtml = "";
+  if (recents.length === 0) {
+    recentsHtml = `<div class="hub-empty-recents">No recent projects yet. Create a quick project or open an existing directory.</div>`;
+  } else {
+    recentsHtml = recents.map(r => `
+      <div class="hub-recent-row" data-path="${esc(r.path)}">
+        <div class="hub-recent-main">
+          <span class="hub-recent-name">${esc(r.name)}</span>
+          <span class="hub-recent-path" title="${esc(r.path)}">${esc(r.path)}</span>
+        </div>
+        <button type="button" class="hub-recent-del" data-del="${esc(r.path)}" title="Remove from recents">✕</button>
+      </div>
+    `).join("");
+  }
+
+  ui.feed.innerHTML = `
+    <div class="project-hub">
+      <div class="hub-header">
+        <div class="hub-tag">AGENT WORKSPACE</div>
+        <h2 class="hub-title">Mistline Project Hub</h2>
+        <p class="hub-sub">Autonomous coding agent environment with full workspace access, tool execution, and local terminal execution.</p>
+      </div>
+
+      <div class="hub-grid">
+        <div class="hub-card">
+          <div>
+            <div class="hub-card-head">
+              <div class="hub-card-title">1-Click Quick Project</div>
+              <span class="hub-card-badge">DEFAULT FOLDER</span>
+            </div>
+            <div class="hub-card-desc">Creates a ready-to-use workspace inside <code>Documents/Mistline/Projects/</code>.</div>
+          </div>
+          <div class="hub-input-row">
+            <input type="text" id="hub-project-name" placeholder="Project name (optional)" autocomplete="off" spellcheck="false" />
+            <button type="button" class="hub-btn-primary" id="hub-btn-create">Create Project</button>
+          </div>
+        </div>
+
+        <div class="hub-card">
+          <div>
+            <div class="hub-card-head">
+              <div class="hub-card-title">Open Existing Folder</div>
+              <span class="hub-card-badge">LOCAL DISK</span>
+            </div>
+            <div class="hub-card-desc">Open an existing repository, codebase, or directory from any drive on this PC.</div>
+          </div>
+          <div class="hub-input-row">
+            <button type="button" class="hub-btn-sec" id="hub-btn-open">Browse Folder...</button>
+            <button type="button" class="hub-btn-text" id="hub-btn-explore">Open Projects Folder</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hub-recents-wrap">
+        <div class="hub-recents-head">
+          <span>RECENT PROJECTS</span>
+          <span style="font-size: 10px; color: var(--dim);">${recents.length} saved</span>
+        </div>
+        <div class="hub-recents-list" id="hub-recents-list">
+          ${recentsHtml}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const nameInput = ui.feed.querySelector<HTMLInputElement>("#hub-project-name");
+  const createBtn = ui.feed.querySelector<HTMLButtonElement>("#hub-btn-create");
+  const openBtn = ui.feed.querySelector<HTMLButtonElement>("#hub-btn-open");
+  const exploreBtn = ui.feed.querySelector<HTMLButtonElement>("#hub-btn-explore");
+
+  const doCreate = async () => {
+    const name = nameInput ? nameInput.value.trim() : "";
+    try {
+      const createdPath = await invoke<string>("create_project", { name: name || null });
+      await attachProject(ui, createdPath);
+    } catch (e) {
+      await message(String(e), { title: "Cannot create project", kind: "error" });
+    }
+  };
+
+  if (createBtn) createBtn.onclick = doCreate;
+  if (nameInput) {
+    nameInput.onkeydown = e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        doCreate();
+      }
+    };
+  }
+
+  if (openBtn) {
+    openBtn.onclick = async () => {
+      const dir = await open({ directory: true });
+      if (typeof dir !== "string") return;
+      await attachProject(ui, dir);
+    };
+  }
+
+  if (exploreBtn) {
+    exploreBtn.onclick = async () => {
+      try {
+        const defaultDir = await invoke<string>("get_default_projects_dir");
+        await invoke("open_in_explorer", { path: defaultDir });
+      } catch (e) {
+        await message(String(e), { title: "Cannot open folder", kind: "error" });
+      }
+    };
+  }
+
+  const recentsList = ui.feed.querySelector("#hub-recents-list");
+  if (recentsList) {
+    recentsList.addEventListener("click", async e => {
+      const target = e.target as HTMLElement;
+      const delBtn = target.closest<HTMLButtonElement>(".hub-recent-del");
+      if (delBtn) {
+        e.stopPropagation();
+        const p = delBtn.getAttribute("data-del");
+        if (p) {
+          removeRecentProject(p);
+          renderProjectHub(ui);
+        }
+        return;
+      }
+      const row = target.closest<HTMLElement>(".hub-recent-row");
+      if (row) {
+        const p = row.getAttribute("data-path");
+        if (p) {
+          await attachProject(ui, p);
+        }
+      }
+    });
+  }
+}
+
 function showEmpty(ui: UI) {
   if (ui.kind === "chat") {
     ui.feed.innerHTML = `<div class="empty"><b>Mistline Chat</b><br>Ask anything. Pure conversational mode without folder access.<br>Click "Connect Project" above if you want to turn this into a coding agent.</div>`;
+  } else if (!ui.workspace) {
+    renderProjectHub(ui);
   } else {
     ui.feed.innerHTML = `<div class="empty"><b>Mistline Agent</b><br>Describe a task. The agent can read, edit files and run commands in <code>${esc(baseName(ui.workspace))}</code>.</div>`;
   }
@@ -383,10 +569,6 @@ async function newSession(workspace?: string, kind?: string) {
     const prev = Array.from(sessions.values()).find(u => u.kind === "agent" && u.workspace);
     if (prev) {
       ws = prev.workspace;
-    } else {
-      const dir = await open({ directory: true });
-      if (typeof dir !== "string") return;
-      ws = dir;
     }
   }
   const info = await invoke<SessionInfo>("create_session", { workspace: k === "chat" ? null : ws, kind: k });
@@ -709,6 +891,15 @@ async function send() {
     openSettings("providers");
     return;
   }
+  if (ui.kind === "agent" && !ui.workspace) {
+    try {
+      const quickPath = await invoke<string>("create_project", { name: null });
+      await attachProject(ui, quickPath);
+    } catch (e) {
+      await message(String(e), { title: "Cannot initialize project", kind: "error" });
+      return;
+    }
+  }
   input.value = ""; autosize();
   addUser(ui, text);
   ui.timeline.innerHTML = ""; ui.tools.clear();
@@ -772,6 +963,7 @@ if (btnConvert) {
       const updated = await invoke<SessionInfo>("convert_to_agent", { id: ui.id, workspace: dir });
       ui.kind = "agent";
       ui.workspace = updated.workspace;
+      addRecentProject(updated.workspace);
       setSpace("projects", false);
       renderTabs();
       await refreshWorkspace();
@@ -866,28 +1058,80 @@ async function loadDir(rel: string, box: HTMLElement, depth: number) {
 async function refreshWorkspace() {
   const ui = cur();
   if (!ui) return;
-  if (currentSpace === "chats" || ui.kind === "chat" || !ui.workspace) {
+  const sidePname = $("side-pname");
+  const wsReveal = $<HTMLButtonElement>("ws-reveal");
+
+  if (currentSpace === "chats" || ui.kind === "chat") {
     sideEl.classList.add("hidden");
-    wsBtn.textContent = "no folder connected";
-    wsBtn.title = "Chat mode · No folder connected";
+    if (sidePname) sidePname.textContent = "Chat mode";
+    if (wsReveal) wsReveal.disabled = true;
     treeEl.innerHTML = "";
+  } else if (!ui.workspace) {
+    sideEl.classList.remove("hidden");
+    if (sidePname) {
+      sidePname.textContent = "No project";
+      sidePname.title = "No project connected";
+    }
+    if (wsReveal) wsReveal.disabled = true;
+    treeEl.innerHTML = `<div style="padding: 14px 10px; color: var(--dim); font-size: 11px; line-height: 1.5;">Select or create a project to explore files and enable tools.</div>`;
   } else {
     sideEl.classList.remove("hidden");
-    wsBtn.textContent = baseName(ui.workspace);
-    wsBtn.title = ui.workspace;
+    if (sidePname) {
+      sidePname.textContent = baseName(ui.workspace);
+      sidePname.title = ui.workspace;
+    }
+    if (wsReveal) wsReveal.disabled = false;
     await loadDir("", treeEl, 0);
   }
 }
+
 wsBtn.onclick = async () => {
   const dir = await open({ directory: true });
   if (typeof dir !== "string") return;
-  try {
-    await newSession(dir, "agent");
-    setSpace("projects", false);
-  } catch (e) {
-    await message(String(e), { title: "Cannot open folder", kind: "error" });
+  const ui = cur();
+  if (ui && ui.kind === "agent") {
+    await attachProject(ui, dir);
+  } else {
+    try {
+      await newSession(dir, "agent");
+      setSpace("projects", false);
+    } catch (e) {
+      await message(String(e), { title: "Cannot open folder", kind: "error" });
+    }
   }
 };
+
+const wsNewBtn = $("ws-new");
+if (wsNewBtn) {
+  wsNewBtn.onclick = async () => {
+    try {
+      const createdPath = await invoke<string>("create_project", { name: null });
+      const ui = cur();
+      if (ui && ui.kind === "agent") {
+        await attachProject(ui, createdPath);
+      } else {
+        await newSession(createdPath, "agent");
+        setSpace("projects", false);
+      }
+    } catch (e) {
+      await message(String(e), { title: "Cannot create project", kind: "error" });
+    }
+  };
+}
+
+const wsRevealBtn = $("ws-reveal");
+if (wsRevealBtn) {
+  wsRevealBtn.onclick = async () => {
+    const ui = cur();
+    if (ui && ui.workspace) {
+      try {
+        await invoke("open_in_explorer", { path: ui.workspace });
+      } catch (e) {
+        await message(String(e), { title: "Cannot open explorer", kind: "error" });
+      }
+    }
+  };
+}
 
 /* ================= settings (tabbed, easy to extend) ================= */
 interface Pane { id: string; label: string; render: (root: HTMLElement) => void | Promise<void>; collect?: () => void }
@@ -1017,15 +1261,36 @@ const providersPane: Pane = {
       <div class="line"><select id="p-preset">${presetOptions}</select><button type="button" id="p-add">Add provider</button></div>
       <label>Name<input id="s-name" type="text"></label>
       <label>Base URL<input id="s-url" type="text"></label>
-      <label>API key<input id="s-key" type="password" autocomplete="off"></label>
-      <label>Model<input id="s-model" type="text" list="model-list"></label>
-      <datalist id="model-list"></datalist>
-      <div class="line"><button type="button" id="s-test">Test connection</button><span id="s-status"></span></div>
-      <label>Price per 1M input tokens, USD (optional, for cost estimates)<input id="s-pin" type="text" inputmode="decimal"></label>
-      <label>Price per 1M output tokens, USD (optional)<input id="s-pout" type="text" inputmode="decimal"></label>
+      <label>API key
+        <div class="input-with-btn">
+          <input id="s-key" type="password" autocomplete="off" placeholder="sk-...">
+          <button type="button" id="btn-toggle-key" title="Show or hide API key">Show</button>
+        </div>
+      </label>
+      <label>Model
+        <div class="model-picker-wrap">
+          <div class="input-with-btn">
+            <input id="s-model" type="text" placeholder="Type to search or enter model name..." autocomplete="off">
+            <button type="button" id="btn-fetch-models" title="Fetch live models from provider">Fetch</button>
+          </div>
+          <div id="model-dropdown" class="model-dropdown hidden"></div>
+        </div>
+      </label>
+      <div class="conn-status" id="s-status"></div>
+      <details class="advanced-sec">
+        <summary>Advanced: Token pricing (optional)</summary>
+        <label>Price per 1M input tokens, USD<input id="s-pin" type="text" inputmode="decimal"></label>
+        <label>Price per 1M output tokens, USD<input id="s-pout" type="text" inputmode="decimal"></label>
+      </details>
       <p class="note">Keys are stored on this computer in plain text. Local models (Ollama, LM Studio) need no key.</p>`;
 
     const sel = $<HTMLSelectElement>("p-select");
+    const modelInput = $<HTMLInputElement>("s-model");
+    const dropdown = $("model-dropdown");
+    const statusEl = $("s-status");
+    let availableModels: string[] = [];
+    let isFetching = false;
+
     const fillSelect = () => {
       sel.innerHTML = "";
       for (const p of draft.items) {
@@ -1035,13 +1300,131 @@ const providersPane: Pane = {
       }
       sel.value = draftId;
     };
+
     const fillFields = () => {
       const p = draftProfile();
       fld("s-name").value = p.name; fld("s-url").value = p.baseUrl; fld("s-key").value = p.apiKey;
       fld("s-model").value = p.model; fld("s-pin").value = p.priceIn; fld("s-pout").value = p.priceOut;
-      $("s-status").textContent = "";
+      statusEl.className = "conn-status";
+      statusEl.textContent = "";
+      availableModels = [];
+      dropdown.classList.add("hidden");
+      if (p.baseUrl && (p.apiKey || isLocal(p.baseUrl))) {
+        doFetch(true);
+      }
     };
-    fillSelect(); fillFields();
+
+    fillSelect();
+    fillFields();
+
+    let keyVisible = false;
+    $("btn-toggle-key").onclick = () => {
+      keyVisible = !keyVisible;
+      fld("s-key").type = keyVisible ? "text" : "password";
+      $("btn-toggle-key").textContent = keyVisible ? "Hide" : "Show";
+    };
+
+    const renderDropdown = (query = "") => {
+      const q = query.trim().toLowerCase();
+      const matches = q ? availableModels.filter(m => m.toLowerCase().includes(q)) : availableModels;
+      if (!matches.length) {
+        if (!availableModels.length) {
+          dropdown.innerHTML = `<div style="padding: 8px 10px; color: var(--dim); font-size: 11px;">No models loaded. Click "Fetch" or type model name.</div>`;
+        } else {
+          dropdown.innerHTML = `<div style="padding: 8px 10px; color: var(--dim); font-size: 11px;">No matching models. You can still use "${esc(query)}".</div>`;
+        }
+        dropdown.classList.remove("hidden");
+        return;
+      }
+
+      dropdown.innerHTML = "";
+      for (const m of matches.slice(0, 100)) {
+        const isFree = m.toLowerCase().includes(":free") || isLocal(draftProfile().baseUrl);
+        const item = el("div", `model-item${m === modelInput.value ? " selected" : ""}`);
+        item.setAttribute("data-model", m);
+        item.innerHTML = `<span class="m-name">${esc(m)}</span>${isFree ? `<span class="badge-free">FREE</span>` : ""}`;
+        item.onclick = (e) => {
+          e.stopPropagation();
+          modelInput.value = m;
+          readFields();
+          dropdown.classList.add("hidden");
+        };
+        dropdown.appendChild(item);
+      }
+      dropdown.classList.remove("hidden");
+    };
+
+    modelInput.onfocus = () => {
+      renderDropdown(modelInput.value);
+    };
+
+    modelInput.oninput = () => {
+      readFields();
+      renderDropdown(modelInput.value);
+    };
+
+    document.addEventListener("click", e => {
+      if (!modelInput.contains(e.target as Node) && !dropdown.contains(e.target as Node)) {
+        dropdown.classList.add("hidden");
+      }
+    });
+
+    const doFetch = async (silent = false) => {
+      readFields();
+      const prof = draftProfile();
+      if (!prof.baseUrl) {
+        if (!silent) {
+          statusEl.className = "conn-status err";
+          statusEl.textContent = "Please enter Base URL first.";
+        }
+        return;
+      }
+      if (isFetching) return;
+      isFetching = true;
+      statusEl.className = "conn-status loading";
+      statusEl.textContent = "Fetching models…";
+      try {
+        const ids = await invoke<string[]>("test_connection", { settings: toSettings(prof) });
+        availableModels = ids;
+        isFetching = false;
+        statusEl.className = "conn-status ok";
+        statusEl.textContent = `✓ Connected · ${ids.length} models available`;
+        if (document.activeElement === modelInput) {
+          renderDropdown(modelInput.value);
+        }
+      } catch (e) {
+        isFetching = false;
+        if (!silent) {
+          statusEl.className = "conn-status err";
+          statusEl.textContent = `✕ Connection failed: ${e}`;
+        } else {
+          statusEl.className = "conn-status";
+          statusEl.textContent = "";
+        }
+      }
+    };
+
+    $("btn-fetch-models").onclick = () => doFetch(false);
+
+    let debounceTimer: any = null;
+    fld("s-key").oninput = () => {
+      readFields();
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (fld("s-key").value.trim().length > 5) {
+          doFetch(true);
+        }
+      }, 700);
+    };
+    fld("s-url").oninput = () => {
+      readFields();
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (isLocal(fld("s-url").value)) {
+          doFetch(true);
+        }
+      }, 700);
+    };
 
     sel.onchange = () => { readFields(); draftId = sel.value; fillSelect(); fillFields(); };
     $("p-add").onclick = () => {
@@ -1055,16 +1438,6 @@ const providersPane: Pane = {
       draft.items = draft.items.filter(p => p.id !== draftId);
       draftId = draft.items[0].id;
       fillSelect(); fillFields();
-    };
-    $("s-test").onclick = async () => {
-      readFields();
-      const st = $("s-status");
-      st.textContent = "checking…";
-      try {
-        const ids = await invoke<string[]>("test_connection", { settings: toSettings(draftProfile()) });
-        $("model-list").innerHTML = ids.map(i => `<option value="${esc(i)}"></option>`).join("");
-        st.textContent = `connected, ${ids.length} models (pick one in the Model field)`;
-      } catch (e) { st.textContent = String(e); }
     };
   },
 };
@@ -1170,7 +1543,12 @@ setPanel(getSaved("panel") !== "0");
   sideEl.classList.toggle("hidden", initialSpace === "chats");
 
   const infos = await invoke<SessionInfo[]>("list_sessions");
-  for (const i of infos) makeUI(i);
+  for (const i of infos) {
+    makeUI(i);
+    if (i.kind === "agent" && i.workspace) {
+      addRecentProject(i.workspace);
+    }
+  }
   if (!order.length) {
     await newSession(undefined, initialSpace === "chats" ? "chat" : "agent");
     return;
