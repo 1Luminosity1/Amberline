@@ -1,6 +1,6 @@
 [package]
 name = "mistline"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 description = "Fast, minimalist, agent-first desktop environment for coding and chat"
 authors = ["1Luminosity1"]

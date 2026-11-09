@@ -1258,7 +1258,7 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
-const APP_VERSION = "0.1.9";
+const APP_VERSION = "0.1.10";
 
 const updateDlg = $<HTMLDialogElement>("update-dialog");
 let pendingUpdate: any = null;
