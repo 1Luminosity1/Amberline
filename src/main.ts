@@ -52,13 +52,15 @@ interface Settings {
 }
 const PRESETS: Record<string, { name: string; baseUrl: string; model: string }> = {
   gemini: { name: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
-  grok: { name: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", model: "grok-2-latest" },
+  openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "anthropic/claude-3.5-sonnet" },
   deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
   openai: { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
-  openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "anthropic/claude-3.5-sonnet" },
+  grok: { name: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", model: "grok-2-latest" },
   groq: { name: "Groq (Fast)", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
   mistral: { name: "Mistral AI", baseUrl: "https://api.mistral.ai/v1", model: "codestral-latest" },
   together: { name: "Together AI", baseUrl: "https://api.together.xyz/v1", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+  perplexity: { name: "Perplexity AI", baseUrl: "https://api.perplexity.ai", model: "sonar-pro" },
+  cohere: { name: "Cohere", baseUrl: "https://api.cohere.com/v2", model: "command-r-plus" },
   ollama: { name: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "qwen2.5-coder" },
   lmstudio: { name: "LM Studio (local)", baseUrl: "http://localhost:1234/v1", model: "" },
   custom: { name: "Custom (OpenAI-compatible)", baseUrl: "", model: "" },
@@ -221,6 +223,7 @@ interface UI {
   feed: HTMLElement; timeline: HTMLElement; assistant: HTMLElement | null; seg: Seg | null;
   tools: Map<string, HTMLDetailsElement>; t0: number; summaries: Summary[];
   thinkEl: HTMLDetailsElement | null; thinkStart: number; thinkDuration: number;
+  inThoughtTag: boolean;
 }
 const sessions = new Map<string, UI>();
 let order: string[] = [];
@@ -432,7 +435,7 @@ function makeUI(info: SessionInfo): UI {
     id: info.id, title: info.title, workspace: info.workspace, kind, running: info.running,
     hasMessages: info.runs > 0, loaded: false, feed, timeline, assistant: null, seg: null,
     tools: new Map(), t0: 0, summaries: [],
-    thinkEl: null, thinkStart: 0, thinkDuration: 0,
+    thinkEl: null, thinkStart: 0, thinkDuration: 0, inThoughtTag: false,
   };
   sessions.set(info.id, ui);
   order.push(info.id);
@@ -517,7 +520,20 @@ function renderHistory(ui: UI, history: any[]) {
       a = null;
     } else if (m.role === "assistant") {
       if (!a) { a = el("div", "msg assistant"); ui.feed.appendChild(a); }
-      if (m.content) a.appendChild(el("div", "assistant-body", md(String(m.content))));
+      if (m.content) {
+        const raw = String(m.content);
+        const match = raw.match(/<(thought|think)>([\s\S]*?)<\/\1>/i);
+        if (match) {
+          const thoughtContent = match[2].trim();
+          const cleanContent = raw.replace(/<(thought|think)>([\s\S]*?)<\/\1>/i, "").trim();
+          const d = el("details", "think", `<summary><span class="think-icon">▸</span> <span class="think-title">Thought</span></summary><div class="think-body"></div>`) as HTMLDetailsElement;
+          (d.querySelector(".think-body") as HTMLElement).textContent = thoughtContent;
+          a.appendChild(d);
+          if (cleanContent) a.appendChild(el("div", "assistant-body", md(cleanContent)));
+        } else {
+          a.appendChild(el("div", "assistant-body", md(raw)));
+        }
+      }
       for (const tc of m.tool_calls ?? []) {
         let args: Record<string, any> = {};
         try { args = JSON.parse(tc.function?.arguments || "{}"); } catch { /* keep empty */ }
@@ -652,6 +668,7 @@ function addUser(ui: UI, text: string) {
   ui.thinkEl = null;
   ui.thinkStart = 0;
   ui.thinkDuration = 0;
+  ui.inThoughtTag = false;
   ui.hasMessages = true;
   if (!ui.title) { ui.title = text.slice(0, 48); renderTabs(); }
   ui.feed.scrollTop = ui.feed.scrollHeight;
@@ -689,6 +706,119 @@ function trace(ui: UI, kind: string, label: string, bad = false) {
   ui.timeline.scrollTop = ui.timeline.scrollHeight;
 }
 
+function startThinking(ui: UI, a: HTMLElement) {
+  if (!ui.thinkStart) ui.thinkStart = Date.now();
+  if (!ui.thinkEl) {
+    const d = el("details", "think running", `<summary><span class="think-icon">▸</span> <span class="think-title">Thinking</span></summary><div class="think-body"></div>`) as HTMLDetailsElement;
+    d.open = true;
+    a.appendChild(d);
+    ui.thinkEl = d;
+    ui.seg = { kind: "reason", el: d.querySelector(".think-body") as HTMLElement, buf: "" };
+    trace(ui, "think", "reasoning");
+  }
+}
+
+function appendThoughtText(ui: UI, a: HTMLElement, text: string) {
+  if (!ui.thinkEl) startThinking(ui, a);
+  if (ui.seg && ui.seg.kind === "reason") {
+    ui.seg.buf += text;
+    ui.seg.el.textContent = ui.seg.buf;
+  } else if (ui.thinkEl) {
+    const body = ui.thinkEl.querySelector(".think-body") as HTMLElement;
+    if (body) {
+      body.textContent = (body.textContent || "") + text;
+      ui.seg = { kind: "reason", el: body, buf: body.textContent };
+    }
+  }
+}
+
+function endThinking(ui: UI) {
+  if (ui.thinkStart && !ui.thinkDuration) {
+    ui.thinkDuration = Date.now() - ui.thinkStart;
+  }
+  if (ui.thinkEl) {
+    const sumTitle = ui.thinkEl.querySelector(".think-title");
+    const durSec = ui.thinkDuration ? (ui.thinkDuration / 1000).toFixed(1) : "0.5";
+    if (sumTitle) sumTitle.textContent = `Thought for ${durSec}s`;
+    ui.thinkEl.classList.remove("running");
+    ui.thinkEl.open = false;
+  }
+  if (ui.seg && ui.seg.kind === "reason") {
+    ui.seg = null;
+  }
+}
+
+function appendRegularText(ui: UI, a: HTMLElement, text: string) {
+  endThinking(ui);
+  if (!ui.seg || ui.seg.kind !== "text") {
+    const e = el("div", "assistant-body");
+    a.appendChild(e);
+    ui.seg = { kind: "text", el: e, buf: "" };
+    trace(ui, "answer", "writing response");
+  }
+  ui.seg.buf += text;
+  ui.seg.el.innerHTML = md(ui.seg.buf);
+}
+
+function handleTextDelta(ui: UI, a: HTMLElement, rawDelta: string) {
+  let remaining = rawDelta;
+  while (remaining.length > 0) {
+    if (!ui.inThoughtTag) {
+      const lower = remaining.toLowerCase();
+      const idxThought = lower.indexOf("<thought>");
+      const idxThink = lower.indexOf("<think>");
+
+      let startIdx = -1;
+      let tagLen = 0;
+      if (idxThought !== -1 && (idxThink === -1 || idxThought < idxThink)) {
+        startIdx = idxThought;
+        tagLen = "<thought>".length;
+      } else if (idxThink !== -1) {
+        startIdx = idxThink;
+        tagLen = "<think>".length;
+      }
+
+      if (startIdx === -1) {
+        appendRegularText(ui, a, remaining);
+        break;
+      } else {
+        if (startIdx > 0) {
+          appendRegularText(ui, a, remaining.slice(0, startIdx));
+        }
+        ui.inThoughtTag = true;
+        startThinking(ui, a);
+        remaining = remaining.slice(startIdx + tagLen);
+      }
+    } else {
+      const lower = remaining.toLowerCase();
+      const idxCloseThought = lower.indexOf("</thought>");
+      const idxCloseThink = lower.indexOf("</think>");
+
+      let closeIdx = -1;
+      let closeLen = 0;
+      if (idxCloseThought !== -1 && (idxCloseThink === -1 || idxCloseThought < idxCloseThink)) {
+        closeIdx = idxCloseThought;
+        closeLen = "</thought>".length;
+      } else if (idxCloseThink !== -1) {
+        closeIdx = idxCloseThink;
+        closeLen = "</think>".length;
+      }
+
+      if (closeIdx === -1) {
+        appendThoughtText(ui, a, remaining);
+        break;
+      } else {
+        if (closeIdx > 0) {
+          appendThoughtText(ui, a, remaining.slice(0, closeIdx));
+        }
+        ui.inThoughtTag = false;
+        endThinking(ui);
+        remaining = remaining.slice(closeIdx + closeLen);
+      }
+    }
+  }
+}
+
 /* ================= agent events ================= */
 function onEvent(ev: Env) {
   const ui = sessions.get(ev.session);
@@ -699,36 +829,11 @@ function onEvent(ev: Env) {
 
   switch (ev.type) {
     case "text": {
-      if (ui.thinkStart && !ui.thinkDuration) {
-        ui.thinkDuration = Date.now() - ui.thinkStart;
-        if (ui.thinkEl) {
-          const sumTitle = ui.thinkEl.querySelector(".think-title");
-          if (sumTitle) sumTitle.textContent = `Thought for ${(ui.thinkDuration / 1000).toFixed(1)}s`;
-          ui.thinkEl.classList.remove("running");
-          ui.thinkEl.open = false;
-        }
-      }
-      if (!ui.seg || ui.seg.kind !== "text") {
-        const e = el("div", "assistant-body"); a.appendChild(e);
-        ui.seg = { kind: "text", el: e, buf: "" };
-        trace(ui, "answer", "writing response");
-      }
-      ui.seg.buf += ev.delta;
-      ui.seg.el.innerHTML = md(ui.seg.buf);
+      handleTextDelta(ui, a, ev.delta);
       break;
     }
     case "reasoning": {
-      if (!ui.thinkStart) ui.thinkStart = Date.now();
-      if (!ui.seg || ui.seg.kind !== "reason") {
-        const d = el("details", "think running", `<summary><span class="think-icon">▸</span> <span class="think-title">Thinking</span></summary><div class="think-body"></div>`) as HTMLDetailsElement;
-        d.open = true;
-        a.appendChild(d);
-        ui.thinkEl = d;
-        ui.seg = { kind: "reason", el: d.querySelector(".think-body") as HTMLElement, buf: "" };
-        trace(ui, "think", "reasoning");
-      }
-      ui.seg.buf += ev.delta;
-      ui.seg.el.textContent = ui.seg.buf;
+      appendThoughtText(ui, a, ev.delta);
       break;
     }
     case "tool_start": {
@@ -1153,7 +1258,7 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
-const APP_VERSION = "0.1.8";
+const APP_VERSION = "0.1.9";
 
 const updateDlg = $<HTMLDialogElement>("update-dialog");
 let pendingUpdate: any = null;
@@ -1257,10 +1362,19 @@ const providersPane: Pane = {
   render(root) {
     const presetOptions = Object.entries(PRESETS).map(([k, v]) => `<option value="${k}">${esc(v.name)}</option>`).join("");
     root.innerHTML = `<h3>AI providers</h3>
-      <div class="line"><select id="p-select"></select><button type="button" id="p-del">Delete</button></div>
-      <div class="line"><select id="p-preset">${presetOptions}</select><button type="button" id="p-add">Add provider</button></div>
-      <label>Name<input id="s-name" type="text"></label>
-      <label>Base URL<input id="s-url" type="text"></label>
+      <div class="line">
+        <label style="flex: 1; margin: 0;">Active profile<select id="p-select"></select></label>
+        <button type="button" id="p-del" style="align-self: flex-end;" title="Delete this profile">Delete</button>
+        <button type="button" id="p-add" style="align-self: flex-end;" title="Add new profile">+ New</button>
+      </div>
+      <label>Service Preset (Auto-fills Base URL)
+        <select id="s-preset">
+          <option value="">— Select provider to auto-fill Base URL —</option>
+          ${presetOptions}
+        </select>
+      </label>
+      <label>Name<input id="s-name" type="text" placeholder="e.g. My Provider"></label>
+      <label>Base URL<input id="s-url" type="text" placeholder="https://..."></label>
       <label>API key
         <div class="input-with-btn">
           <input id="s-key" type="password" autocomplete="off" placeholder="sk-...">
@@ -1285,6 +1399,7 @@ const providersPane: Pane = {
       <p class="note">Keys are stored on this computer in plain text. Local models (Ollama, LM Studio) need no key.</p>`;
 
     const sel = $<HTMLSelectElement>("p-select");
+    const presetSel = $<HTMLSelectElement>("s-preset");
     const modelInput = $<HTMLInputElement>("s-model");
     const dropdown = $("model-dropdown");
     const statusEl = $("s-status");
@@ -1305,11 +1420,36 @@ const providersPane: Pane = {
       const p = draftProfile();
       fld("s-name").value = p.name; fld("s-url").value = p.baseUrl; fld("s-key").value = p.apiKey;
       fld("s-model").value = p.model; fld("s-pin").value = p.priceIn; fld("s-pout").value = p.priceOut;
+      const foundPreset = Object.entries(PRESETS).find(([_, v]) => v.baseUrl && v.baseUrl.toLowerCase() === p.baseUrl.toLowerCase());
+      if (foundPreset) {
+        presetSel.value = foundPreset[0];
+      } else {
+        presetSel.value = p.baseUrl ? "custom" : "";
+      }
       statusEl.className = "conn-status";
       statusEl.textContent = "";
       availableModels = [];
       dropdown.classList.add("hidden");
       if (p.baseUrl && (p.apiKey || isLocal(p.baseUrl))) {
+        doFetch(true);
+      }
+    };
+
+    presetSel.onchange = () => {
+      const chosen = presetSel.value;
+      if (!chosen || !PRESETS[chosen]) return;
+      const item = PRESETS[chosen];
+      fld("s-url").value = item.baseUrl;
+      const curName = fld("s-name").value.trim();
+      if (!curName || curName === "Provider" || curName === "None" || Object.values(PRESETS).some(x => x.name === curName)) {
+        fld("s-name").value = item.name;
+      }
+      if (!fld("s-model").value.trim() && item.model) {
+        fld("s-model").value = item.model;
+      }
+      readFields();
+      fillSelect();
+      if (item.baseUrl && (fld("s-key").value.trim() || isLocal(item.baseUrl))) {
         doFetch(true);
       }
     };
@@ -1440,7 +1580,8 @@ const providersPane: Pane = {
     sel.onchange = () => { readFields(); draftId = sel.value; fillSelect(); fillFields(); };
     $("p-add").onclick = () => {
       readFields();
-      const p = newProfile($<HTMLSelectElement>("p-preset").value);
+      const chosen = presetSel.value || "gemini";
+      const p = newProfile(PRESETS[chosen] ? chosen : "gemini");
       draft.items.push(p); draftId = p.id;
       fillSelect(); fillFields();
     };
