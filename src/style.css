@@ -166,16 +166,68 @@ button.on { color: var(--text); border-color: var(--dim); }
 .empty { color: var(--dim); margin-top: 18vh; }
 .empty b { color: var(--text); font-weight: 600; }
 
-.msg.user { background: var(--surface); border-left: 2px solid var(--accent); padding: 8px 12px; margin-bottom: 14px; white-space: pre-wrap; }
-.msg.assistant { margin-bottom: 18px; }
-.msg.assistant p { margin: 0 0 10px; }
-.msg code { background: var(--raised); padding: 0 4px; border-radius: 0; }
-.msg pre { background: var(--surface); border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; margin: 6px 0 12px; }
-.msg pre code { background: none; padding: 0; }
+.msg.user {
+  background: var(--surface); border-left: 2px solid var(--accent); padding: 8px 12px; margin-bottom: 14px;
+}
+.msg.user p { margin: 0; white-space: pre-wrap; }
+.msg.assistant { margin-bottom: 22px; }
+.msg.assistant p { margin: 0 0 6px; }
+.msg code { background: var(--raised); padding: 1px 5px; border: 1px solid var(--line); font-size: 12px; }
+.msg blockquote { margin: 6px 0 10px; padding: 4px 12px; border-left: 2px solid var(--line-bright); color: var(--dim); }
+.msg ul, .msg ol { margin: 4px 0 8px; padding-left: 20px; }
+.msg li { margin-bottom: 3px; }
+.msg h2, .msg h3, .msg h4 { margin: 12px 0 6px; font-weight: 600; color: var(--text); }
+.msg hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
+.p-gap { height: 8px; }
 
-details.think { color: var(--dim); margin-bottom: 8px; }
-details.think summary { cursor: pointer; }
-details.think div { white-space: pre-wrap; padding: 4px 0 4px 12px; border-left: 1px solid var(--line); margin-top: 4px; }
+/* code block with header and copy button */
+.code-box {
+  margin: 8px 0 12px; border: 1px solid var(--line); background: var(--surface);
+}
+.code-head {
+  display: flex; justify-content: space-between; align-items: center; padding: 3px 10px;
+  background: var(--raised); border-bottom: 1px solid var(--line); font-size: 11px; color: var(--dim);
+}
+.code-lang { font-family: var(--font); text-transform: lowercase; letter-spacing: 0.5px; }
+.btn-copy {
+  background: none; border: 1px solid var(--line); padding: 1px 7px; font-size: 10px;
+  color: var(--dim); cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.btn-copy:hover { color: var(--text); border-color: var(--dim); }
+.btn-copy.copied { color: var(--green); border-color: var(--green); }
+.code-box pre {
+  margin: 0; padding: 10px 12px; overflow-x: auto; background: transparent; border: none; font-size: 12.5px;
+}
+.code-box pre code { background: none; border: none; padding: 0; }
+
+/* message metadata footer */
+.msg-meta {
+  font-size: 10.5px; color: var(--dim); margin-top: 6px; display: flex; align-items: center; gap: 6px;
+  user-select: none;
+}
+.msg-meta.user { justify-content: flex-end; opacity: 0.6; }
+.msg-meta.assistant { opacity: 0.85; }
+.msg-meta .m-model { color: var(--accent); opacity: 0.9; }
+
+/* thinking accordion */
+details.think {
+  margin: 6px 0 10px; border: 1px solid var(--line); background: var(--surface);
+}
+details.think summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; font-size: 11px; color: var(--dim); user-select: none;
+}
+details.think summary::-webkit-details-marker { display: none; }
+details.think .think-icon { font-size: 9px; display: inline-block; transition: transform 0.15s ease; }
+details.think[open] .think-icon { transform: rotate(90deg); }
+details.think .think-title { color: var(--dim); }
+details.think.running .think-title::after {
+  content: " ●"; color: var(--accent); animation: pulse 1s infinite;
+}
+details.think .think-body {
+  white-space: pre-wrap; padding: 8px 12px; border-top: 1px solid var(--line);
+  color: var(--dim); font-size: 12px; line-height: 1.5; max-height: 250px; overflow-y: auto; background: var(--bg);
+}
 
 details.tool { margin: 4px 0; }
 details.tool > summary { cursor: pointer; list-style: none; display: flex; gap: 10px; color: var(--dim); }

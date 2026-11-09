@@ -112,15 +112,91 @@ const panel = $("panel"), panelSession = $("panel-session"), panelLast = $("pane
 const dlg = $<HTMLDialogElement>("settings");
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-function inline(t: string) {
-  return esc(t).split(/\n{2,}/).filter(p => p.trim()).map(p =>
-    `<p>${p.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>")}</p>`
-  ).join("");
+function parseInline(str: string): string {
+  let s = esc(str);
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  s = s.replace(/__([^_]+)__/g, "<b>$1</b>");
+  s = s.replace(/\*([^*\n]+)\*/g, "<i>$1</i>");
+  s = s.replace(/(^|[^\w])_([^_]+)_([^\w]|$)/g, "$1<i>$2</i>$3");
+  return s;
 }
-function md(src: string) {
-  return src.split("```").map((p, i) =>
-    i % 2 ? `<pre><code>${esc(p.replace(/^[^\n]*\n/, ""))}</code></pre>` : inline(p)
-  ).join("");
+
+function parseBlocks(text: string): string {
+  const lines = text.split("\n");
+  let out = "";
+  let inList = false;
+  let inQuote = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+
+    if (rawLine.startsWith("> ")) {
+      if (!inQuote) { out += "<blockquote>"; inQuote = true; }
+      out += parseInline(rawLine.slice(2)) + "<br>";
+      continue;
+    } else if (inQuote) {
+      out += "</blockquote>";
+      inQuote = false;
+    }
+
+    const listMatch = rawLine.match(/^(\s*)([-*]|\d+\.)\s+(.+)$/);
+    if (listMatch) {
+      if (!inList) { out += "<ul>"; inList = true; }
+      out += `<li>${parseInline(listMatch[3])}</li>`;
+      continue;
+    } else if (inList) {
+      out += "</ul>";
+      inList = false;
+      if (!rawLine.trim()) continue;
+    }
+
+    if (rawLine.startsWith("### ")) {
+      out += `<h4>${parseInline(rawLine.slice(4))}</h4>`;
+      continue;
+    }
+    if (rawLine.startsWith("## ")) {
+      out += `<h3>${parseInline(rawLine.slice(3))}</h3>`;
+      continue;
+    }
+    if (rawLine.startsWith("# ")) {
+      out += `<h2>${parseInline(rawLine.slice(2))}</h2>`;
+      continue;
+    }
+    if (rawLine.trim() === "---" || rawLine.trim() === "***") {
+      out += `<hr>`;
+      continue;
+    }
+
+    if (!rawLine.trim()) {
+      out += `<div class="p-gap"></div>`;
+    } else {
+      out += `<p>${parseInline(rawLine)}</p>`;
+    }
+  }
+
+  if (inList) out += "</ul>";
+  if (inQuote) out += "</blockquote>";
+  return out;
+}
+
+function md(src: string): string {
+  const parts = src.split(/(```[\s\S]*?```)/g);
+  return parts.map(part => {
+    if (part.startsWith("```") && part.endsWith("```")) {
+      const match = part.match(/^```(\w+)?\n?([\s\S]*?)```$/);
+      const lang = (match?.[1] || "code").toLowerCase();
+      const code = match?.[2] || "";
+      return `<div class="code-box"><div class="code-head"><span class="code-lang">${esc(lang)}</span><button type="button" class="btn-copy">Copy</button></div><pre><code>${esc(code)}</code></pre></div>`;
+    }
+    if (part.startsWith("```")) {
+      const match = part.match(/^```(\w+)?\n?([\s\S]*)$/);
+      const lang = (match?.[1] || "code").toLowerCase();
+      const code = match?.[2] || "";
+      return `<div class="code-box"><div class="code-head"><span class="code-lang">${esc(lang)}</span><button type="button" class="btn-copy">Copy</button></div><pre><code>${esc(code)}</code></pre></div>`;
+    }
+    return parseBlocks(part);
+  }).join("");
 }
 const el = (tag: string, cls = "", html = "") => {
   const e = document.createElement(tag);
@@ -144,6 +220,7 @@ interface UI {
   id: string; title: string; workspace: string; kind: "chat" | "agent"; running: boolean; hasMessages: boolean; loaded: boolean;
   feed: HTMLElement; timeline: HTMLElement; assistant: HTMLElement | null; seg: Seg | null;
   tools: Map<string, HTMLDetailsElement>; t0: number; summaries: Summary[];
+  thinkEl: HTMLDetailsElement | null; thinkStart: number; thinkDuration: number;
 }
 const sessions = new Map<string, UI>();
 let order: string[] = [];
@@ -169,6 +246,7 @@ function makeUI(info: SessionInfo): UI {
     id: info.id, title: info.title, workspace: info.workspace, kind, running: info.running,
     hasMessages: info.runs > 0, loaded: false, feed, timeline, assistant: null, seg: null,
     tools: new Map(), t0: 0, summaries: [],
+    thinkEl: null, thinkStart: 0, thinkDuration: 0,
   };
   sessions.set(info.id, ui);
   order.push(info.id);
@@ -247,11 +325,13 @@ function renderHistory(ui: UI, history: any[]) {
   let a: HTMLElement | null = null;
   for (const m of history) {
     if (m.role === "user") {
-      ui.feed.appendChild(el("div", "msg user", esc(String(m.content))));
+      const u = el("div", "msg user");
+      u.innerHTML = `<p>${parseInline(String(m.content ?? ""))}</p>`;
+      ui.feed.appendChild(u);
       a = null;
     } else if (m.role === "assistant") {
       if (!a) { a = el("div", "msg assistant"); ui.feed.appendChild(a); }
-      if (m.content) a.appendChild(el("div", "", md(String(m.content))));
+      if (m.content) a.appendChild(el("div", "assistant-body", md(String(m.content))));
       for (const tc of m.tool_calls ?? []) {
         let args: Record<string, any> = {};
         try { args = JSON.parse(tc.function?.arguments || "{}"); } catch { /* keep empty */ }
@@ -378,10 +458,18 @@ function showModel() {
 /* ================= feed rendering ================= */
 function addUser(ui: UI, text: string) {
   if (ui.feed.querySelector(".empty")) ui.feed.innerHTML = "";
-  ui.feed.appendChild(el("div", "msg user", esc(text)));
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const msgUser = el("div", "msg user");
+  msgUser.innerHTML = `<p>${parseInline(text)}</p><div class="msg-meta user">${timeStr}</div>`;
+  ui.feed.appendChild(msgUser);
+
   ui.assistant = el("div", "msg assistant");
   ui.feed.appendChild(ui.assistant);
   ui.seg = null;
+  ui.thinkEl = null;
+  ui.thinkStart = 0;
+  ui.thinkDuration = 0;
   ui.hasMessages = true;
   if (!ui.title) { ui.title = text.slice(0, 48); renderTabs(); }
   ui.feed.scrollTop = ui.feed.scrollHeight;
@@ -429,8 +517,17 @@ function onEvent(ev: Env) {
 
   switch (ev.type) {
     case "text": {
+      if (ui.thinkStart && !ui.thinkDuration) {
+        ui.thinkDuration = Date.now() - ui.thinkStart;
+        if (ui.thinkEl) {
+          const sumTitle = ui.thinkEl.querySelector(".think-title");
+          if (sumTitle) sumTitle.textContent = `Thought for ${(ui.thinkDuration / 1000).toFixed(1)}s`;
+          ui.thinkEl.classList.remove("running");
+          ui.thinkEl.open = false;
+        }
+      }
       if (!ui.seg || ui.seg.kind !== "text") {
-        const e = el("div"); a.appendChild(e);
+        const e = el("div", "assistant-body"); a.appendChild(e);
         ui.seg = { kind: "text", el: e, buf: "" };
         trace(ui, "answer", "writing response");
       }
@@ -439,10 +536,13 @@ function onEvent(ev: Env) {
       break;
     }
     case "reasoning": {
+      if (!ui.thinkStart) ui.thinkStart = Date.now();
       if (!ui.seg || ui.seg.kind !== "reason") {
-        const d = el("details", "think", "<summary>thinking</summary><div></div>");
+        const d = el("details", "think running", `<summary><span class="think-icon">▸</span> <span class="think-title">Thinking</span></summary><div class="think-body"></div>`) as HTMLDetailsElement;
+        d.open = true;
         a.appendChild(d);
-        ui.seg = { kind: "reason", el: d.querySelector("div") as HTMLElement, buf: "" };
+        ui.thinkEl = d;
+        ui.seg = { kind: "reason", el: d.querySelector(".think-body") as HTMLElement, buf: "" };
         trace(ui, "think", "reasoning");
       }
       ui.seg.buf += ev.delta;
@@ -494,12 +594,37 @@ function onEvent(ev: Env) {
       a.appendChild(el("div", "err-line", esc(ev.message)));
       trace(ui, "error", ev.message, true);
       break;
-    case "done":
+    case "done": {
+      if (ui.thinkStart && !ui.thinkDuration) {
+        ui.thinkDuration = Date.now() - ui.thinkStart;
+        if (ui.thinkEl) {
+          const sumTitle = ui.thinkEl.querySelector(".think-title");
+          if (sumTitle) sumTitle.textContent = `Thought for ${(ui.thinkDuration / 1000).toFixed(1)}s`;
+          ui.thinkEl.classList.remove("running");
+          ui.thinkEl.open = false;
+        }
+      }
       ui.summaries.push(ev.summary);
       trace(ui, "done", ev.summary.cancelled ? "stopped" : "finished");
       setRunning(ui, false);
+
+      const s = ev.summary;
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const durStr = fmtMs(s.duration_ms);
+      const tokCount = s.completion_tokens;
+      const spd = s.model_ms > 0 && tokCount > 0 ? `${Math.round((tokCount * 1000) / s.model_ms)} t/s` : "";
+      const modelName = s.model || "";
+
+      const meta = el("div", "msg-meta assistant");
+      meta.innerHTML = `<span>${timeStr}</span><span>·</span><span>${durStr}</span>` +
+        (tokCount ? `<span>·</span><span>${tokCount} tok${spd ? ` (${spd})` : ""}</span>` : "") +
+        (modelName ? `<span>·</span><span class="m-model">${esc(modelName)}</span>` : "");
+      a.appendChild(meta);
+
       if (ui.id === activeId) renderPanel();
       break;
+    }
   }
   stick(ui.feed, was);
 }
@@ -604,6 +729,23 @@ function autosize() { input.style.height = "auto"; input.style.height = Math.min
 input.addEventListener("input", autosize);
 input.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+
+feeds.addEventListener("click", e => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".btn-copy");
+  if (!btn) return;
+  const pre = btn.closest(".code-box")?.querySelector("pre");
+  if (!pre) return;
+  const code = pre.textContent || "";
+  navigator.clipboard.writeText(code).then(() => {
+    const old = btn.textContent;
+    btn.textContent = "Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = old;
+      btn.classList.remove("copied");
+    }, 1500);
+  });
 });
 window.addEventListener("keydown", e => {
   const ui = cur();
@@ -767,7 +909,7 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
-const APP_VERSION = "0.1.5";
+const APP_VERSION = "0.1.6";
 
 const updateDlg = $<HTMLDialogElement>("update-dialog");
 let pendingUpdate: any = null;
