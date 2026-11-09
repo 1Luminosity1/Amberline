@@ -1153,7 +1153,7 @@ function readFields() {
   p.priceOut = fld("s-pout").value.trim();
 }
 
-const APP_VERSION = "0.1.6";
+const APP_VERSION = "0.1.8";
 
 const updateDlg = $<HTMLDialogElement>("update-dialog");
 let pendingUpdate: any = null;
@@ -1337,12 +1337,19 @@ const providersPane: Pane = {
         return;
       }
 
+      const isOpenRouter = draftProfile().baseUrl.toLowerCase().includes("openrouter.ai");
       dropdown.innerHTML = "";
       for (const m of matches.slice(0, 100)) {
         const isFree = m.toLowerCase().includes(":free") || isLocal(draftProfile().baseUrl);
         const item = el("div", `model-item${m === modelInput.value ? " selected" : ""}`);
         item.setAttribute("data-model", m);
-        item.innerHTML = `<span class="m-name">${esc(m)}</span>${isFree ? `<span class="badge-free">FREE</span>` : ""}`;
+        let badge = "";
+        if (isFree) {
+          badge = `<span class="badge-free">FREE</span>`;
+        } else if (isOpenRouter) {
+          badge = `<span class="badge-pro">PRO</span>`;
+        }
+        item.innerHTML = `<span class="m-name">${esc(m)}</span>${badge}`;
         item.onclick = (e) => {
           e.stopPropagation();
           modelInput.value = m;
@@ -1384,11 +1391,15 @@ const providersPane: Pane = {
       statusEl.className = "conn-status loading";
       statusEl.textContent = "Fetching models…";
       try {
-        const ids = await invoke<string[]>("test_connection", { settings: toSettings(prof) });
-        availableModels = ids;
+        const res = await invoke<{ models: string[]; balance_info: string | null }>("test_connection", { settings: toSettings(prof) });
+        availableModels = res.models;
         isFetching = false;
         statusEl.className = "conn-status ok";
-        statusEl.textContent = `✓ Connected · ${ids.length} models available`;
+        if (res.balance_info) {
+          statusEl.textContent = `✓ Connected · ${res.balance_info} · ${res.models.length} models available`;
+        } else {
+          statusEl.textContent = `✓ Connected · ${res.models.length} models available`;
+        }
         if (document.activeElement === modelInput) {
           renderDropdown(modelInput.value);
         }

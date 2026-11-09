@@ -285,8 +285,14 @@ fn approve(session_id: String, id: String, allow: bool, state: State<'_, AppStat
 }
 
 /// Checks the connection and returns the model ids the server reports.
+#[derive(Serialize)]
+struct ConnectionInfo {
+    models: Vec<String>,
+    balance_info: Option<String>,
+}
+
 #[tauri::command]
-async fn test_connection(settings: Settings) -> Result<Vec<String>, String> {
+async fn test_connection(settings: Settings) -> Result<ConnectionInfo, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()
@@ -322,7 +328,55 @@ async fn test_connection(settings: Settings) -> Result<Vec<String>, String> {
     }
     ids.sort();
     ids.dedup();
-    Ok(ids)
+
+    let mut balance_info: Option<String> = None;
+    let base = settings.base_url.to_lowercase();
+    if base.contains("openrouter.ai") && !settings.api_key.is_empty() {
+        if let Ok(b_resp) = client
+            .get("https://openrouter.ai/api/v1/auth/key")
+            .bearer_auth(&settings.api_key)
+            .send()
+            .await
+        {
+            if b_resp.status().is_success() {
+                if let Ok(b_val) = b_resp.json::<Value>().await {
+                    let is_free = b_val["data"]["is_free_tier"].as_bool().unwrap_or(false);
+                    let usage = b_val["data"]["usage"].as_f64().unwrap_or(0.0);
+                    let limit = b_val["data"]["limit"].as_f64();
+                    if is_free {
+                        balance_info = Some("Free Tier".to_string());
+                    } else if let Some(lim) = limit {
+                        let remaining = (lim - usage).max(0.0);
+                        balance_info = Some(format!("Credits: ${remaining:.2}"));
+                    } else {
+                        balance_info = Some(format!("Usage: ${usage:.2}"));
+                    }
+                }
+            }
+        }
+    } else if base.contains("deepseek.com") && !settings.api_key.is_empty() {
+        if let Ok(b_resp) = client
+            .get("https://api.deepseek.com/user/balance")
+            .bearer_auth(&settings.api_key)
+            .send()
+            .await
+        {
+            if b_resp.status().is_success() {
+                if let Ok(b_val) = b_resp.json::<Value>().await {
+                    if let Some(info) = b_val["balance_infos"].as_array().and_then(|a| a.first()) {
+                        let curr = info["currency"].as_str().unwrap_or("CNY");
+                        let total = info["total_balance"].as_str().unwrap_or("0");
+                        balance_info = Some(format!("Balance: {total} {curr}"));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ConnectionInfo {
+        models: ids,
+        balance_info,
+    })
 }
 
 #[tauri::command]
