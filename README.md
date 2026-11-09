@@ -1,20 +1,20 @@
 # Mistline
 
 Fast, minimalist, agent-first desktop environment designed for coding, reasoning, and conversational AI.  
-Built with **Tauri 2**, **Tokio async Rust**, and **Vanilla TypeScript** with an OpenCode pitch-black aesthetic.
+Built with **Tauri 2**, **Tokio async Rust core**, and **Vanilla TypeScript** with an OpenCode pitch-black minimalist terminal aesthetic.
 
 ---
 
-## ✨ Features
+## Features
 
 - **Chats & Projects Dual Mode**:
-  - **Chats Space**: Pure conversational AI assistant without file access — ideal for quick brainstorming, drafting, and questions.
+  - **Chats Space**: Pure conversational AI assistant without file access — ideal for quick questions, brainstorming, and drafting.
   - **Projects Space**: Autonomous AI agent with workspace access — can read, create, edit files, and execute shell commands inside your project.
 - **Smart Project Hub**:
   - 1-Click Quick Project initialization in `Documents/Mistline/Projects/Project-N`.
   - Open any existing repository or folder from local disk.
   - Recent projects launcher with quick click-to-open and removal.
-  - Sidebar file explorer with switch, new project, and "Show in Explorer" actions.
+  - Sidebar file explorer with switch, new project, and reveal in File Explorer actions.
 - **Universal AI Providers & Model Picker**:
   - Official presets with **automatic Base URL filling**: Google Gemini, OpenRouter, DeepSeek, OpenAI, xAI (Grok), Groq, Mistral AI, Together AI, Perplexity, Cohere, and local runners (Ollama, LM Studio).
   - Live searchable model dropdown with instant keyword filtering.
@@ -26,7 +26,7 @@ Built with **Tauri 2**, **Tokio async Rust**, and **Vanilla TypeScript** with an
   - Real-time stopwatch accordion (`Thought for Xs`) that automatically folds thoughts away, keeping chat messages clean.
 - **Rich Message Layout & Metrics**:
   - Markdown block parser (headers, bold, italic, quotes, lists, inline code).
-  - IDE code blocks with syntax header and 1-click **Copy** button.
+  - IDE code blocks with syntax header and 1-click Copy button.
   - Message metadata footer: timestamp, generation duration, token count, speed (tokens/sec), and active model name.
 - **Security & Privacy**:
   - Strict workspace sandbox boundaries — prevents path traversal outside the project directory.
@@ -35,7 +35,7 @@ Built with **Tauri 2**, **Tokio async Rust**, and **Vanilla TypeScript** with an
 
 ---
 
-## ⌨️ Shortcuts & Hotkeys
+## Shortcuts & Hotkeys
 
 | Shortcut | Action |
 | :--- | :--- |
@@ -48,13 +48,13 @@ Built with **Tauri 2**, **Tokio async Rust**, and **Vanilla TypeScript** with an
 
 ---
 
-## 🛠️ Development & Requirements
+## Development & Requirements
 
 ### Prerequisites
-- [Node.js](https://nodejs.org) (v20+ recommended)
-- [Rust](https://rustup.rs) (stable)
-- **Windows**: Microsoft Edge WebView2 (pre-installed in Windows 10/11) and MSVC C++ Build Tools
-- **Linux**: `webkit2gtk-4.1`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `build-essential`, `libssl-dev`
+- Node.js (v20+ recommended)
+- Rust (stable, https://rustup.rs)
+- Windows: Microsoft Edge WebView2 and MSVC C++ Build Tools
+- Linux: `webkit2gtk-4.1`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `build-essential`, `libssl-dev`
 
 ### Running locally
 ```bash
@@ -76,7 +76,7 @@ npm run tauri build
 
 ---
 
-## 📁 Architecture Overview
+## Architecture Overview
 
 - `src-tauri/src/agent.rs`: Orchestration loop, context manager, system prompts, approvals, tool dispatch.
 - `src-tauri/src/provider.rs`: Streaming HTTP/SSE client compatible with OpenAI and custom endpoints.
@@ -89,5 +89,6 @@ npm run tauri build
 
 ---
 
-## 📄 License
+## License
+
 MIT License

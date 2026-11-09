@@ -2,6 +2,8 @@
   "name": "mistline",
   "private": true,
   "version": "0.1.9",
+  "description": "Fast, minimalist, agent-first desktop environment for coding and chat",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

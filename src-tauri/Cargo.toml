@@ -2,6 +2,9 @@
 name = "mistline"
 version = "0.1.9"
 edition = "2021"
+description = "Fast, minimalist, agent-first desktop environment for coding and chat"
+authors = ["1Luminosity1"]
+license = "MIT"
 
 [lib]
 name = "mistline_lib"
