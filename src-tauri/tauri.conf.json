@@ -40,7 +40,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFFQkE4MzU3NEE5MUExNUIKUldSYm9aRktWNE82SGpuT3BMSGdiRHc2a2VXdjA5WW9MNmc5dE5PK2pNdzEvQ1FOeUFhZ0htUkkK",
       "endpoints": [
-        "https://github.com/1Luminosity1/Amberline/releases/latest/download/latest.json"
+        "https://github.com/1Luminosity1/Mistline/releases/latest/download/latest.json"
       ]
     }
   }
