@@ -15,10 +15,10 @@ const MAX_STEPS: u32 = 30;
 
 fn system_prompt(ws: &Path, is_chat: bool) -> String {
     if is_chat {
-        "You are Amberline, a helpful, thoughtful, and accurate AI assistant. Answer clearly and concisely.".to_string()
+        "You are Mistline, a helpful, thoughtful, and accurate AI assistant. Answer clearly and concisely.".to_string()
     } else {
         let mut prompt = format!(
-            "You are Amberline, a coding agent working inside the user's project.\n\
+            "You are Mistline, a coding agent working inside the user's project.\n\
              Workspace: {}\nOS: {}\n\n\
              Use the tools to inspect and change files and to run commands. Read a file before editing it. \
              Prefer small exact edits (edit_file) over rewriting whole files. Keep answers short and concrete. \
@@ -28,7 +28,9 @@ fn system_prompt(ws: &Path, is_chat: bool) -> String {
         );
 
         let candidates = [
+            ws.join(".mistline").join("instructions.md"),
             ws.join(".amberline").join("instructions.md"),
+            ws.join("MISTLINE.md"),
             ws.join("AGENTS.md"),
             ws.join("AMBERLINE.md"),
         ];

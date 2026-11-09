@@ -391,5 +391,5 @@ pub fn run() {
             win_start_drag
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Amberline");
+        .expect("error while running Mistline");
 }

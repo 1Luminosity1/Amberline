@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Amberline",
+  "productName": "Mistline",
   "version": "0.1.5",
-  "identifier": "dev.amberline.app",
+  "identifier": "dev.mistline.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Amberline",
+        "title": "Mistline",
         "width": 1200,
         "height": 800,
         "minWidth": 480,

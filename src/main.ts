@@ -66,16 +66,23 @@ const PRESETS: Record<string, { name: string; baseUrl: string; model: string }> 
 const uid = () => Math.random().toString(36).slice(2, 8);
 const newProfile = (preset: string): Profile => ({ id: uid(), apiKey: "", priceIn: "", priceOut: "", ...PRESETS[preset] });
 
+function getSaved(key: string): string | null {
+  return localStorage.getItem("mistline." + key) ?? localStorage.getItem("amberline." + key);
+}
+function setSaved(key: string, val: string): void {
+  localStorage.setItem("mistline." + key, val);
+}
+
 function loadStore(): Store {
   try {
-    const raw = localStorage.getItem("amberline.profiles");
+    const raw = getSaved("profiles");
     if (raw) {
       const s = JSON.parse(raw) as Partial<Store>;
       if (s.items?.length) {
         return { active: s.active ?? s.items[0].id, autoApprove: !!s.autoApprove, fontSize: s.fontSize ?? 13, items: s.items };
       }
     }
-    const old = JSON.parse(localStorage.getItem("amberline.settings") || "null");
+    const old = JSON.parse(getSaved("settings") || "null");
     if (old) {
       const p = { ...newProfile("deepseek"), apiKey: old.apiKey || "", baseUrl: old.baseUrl, model: old.model };
       return { active: p.id, autoApprove: !!old.autoApprove, fontSize: 13, items: [p] };
@@ -142,13 +149,13 @@ const sessions = new Map<string, UI>();
 let order: string[] = [];
 let activeId = "";
 const cur = () => sessions.get(activeId);
-let currentSpace: "chats" | "projects" = (localStorage.getItem("amberline.space") as "chats" | "projects") || "chats";
+let currentSpace: "chats" | "projects" = (getSaved("space") as "chats" | "projects") || "chats";
 
 function showEmpty(ui: UI) {
   if (ui.kind === "chat") {
-    ui.feed.innerHTML = `<div class="empty"><b>Amberline Chat</b><br>Ask anything. Pure conversational mode without folder access.<br>Click "Connect Project" above if you want to turn this into a coding agent.</div>`;
+    ui.feed.innerHTML = `<div class="empty"><b>Mistline Chat</b><br>Ask anything. Pure conversational mode without folder access.<br>Click "Connect Project" above if you want to turn this into a coding agent.</div>`;
   } else {
-    ui.feed.innerHTML = `<div class="empty"><b>Amberline Agent</b><br>Describe a task. The agent can read, edit files and run commands in <code>${esc(baseName(ui.workspace))}</code>.</div>`;
+    ui.feed.innerHTML = `<div class="empty"><b>Mistline Agent</b><br>Describe a task. The agent can read, edit files and run commands in <code>${esc(baseName(ui.workspace))}</code>.</div>`;
   }
 }
 
@@ -267,8 +274,8 @@ async function activate(id: string) {
   const ui = sessions.get(id);
   if (!ui) return;
   activeId = id;
-  localStorage.setItem("amberline.active", id);
-  localStorage.setItem(`amberline.active.${ui.kind}`, id);
+  setSaved("active", id);
+  setSaved(`active.${ui.kind}`, id);
   for (const [k, u] of sessions) {
     u.feed.classList.toggle("hidden", k !== id);
     u.timeline.classList.toggle("hidden", k !== id);
@@ -561,7 +568,7 @@ function renderPanel() {
 function setPanel(show: boolean) {
   panel.classList.toggle("collapsed", !show);
   $("btn-panel").classList.toggle("on", show);
-  localStorage.setItem("amberline.panel", show ? "1" : "0");
+  setSaved("panel", show ? "1" : "0");
 }
 $("btn-panel").onclick = () => setPanel(panel.classList.contains("collapsed"));
 $("panel-close").onclick = () => setPanel(false);
@@ -656,7 +663,7 @@ const sideEl = $("side");
 
 function setSpace(space: "chats" | "projects", activateDefault = true) {
   currentSpace = space;
-  localStorage.setItem("amberline.space", space);
+  setSaved("space", space);
   modeChats.classList.toggle("active", space === "chats");
   modeProjects.classList.toggle("active", space === "projects");
   sideEl.classList.toggle("hidden", space === "chats");
@@ -667,7 +674,7 @@ function setSpace(space: "chats" | "projects", activateDefault = true) {
     const curUI = cur();
     const matchesCurrent = curUI && (space === "chats" ? curUI.kind === "chat" : curUI.kind === "agent");
     if (!matchesCurrent) {
-      const savedId = localStorage.getItem(`amberline.active.${space}`);
+      const savedId = getSaved(`active.${space}`);
       const candidates = order.filter(id => {
         const u = sessions.get(id);
         return u && (space === "chats" ? u.kind === "chat" : u.kind === "agent");
@@ -796,11 +803,11 @@ $("u-install").onclick = async () => {
           }
           break;
         case "Finished":
-          statusTxt.textContent = "Update installed. Restarting Amberline…";
+          statusTxt.textContent = "Update installed. Restarting Mistline…";
           break;
       }
     });
-    statusTxt.textContent = "Restarting Amberline…";
+    statusTxt.textContent = "Restarting Mistline…";
     await relaunch();
   } catch (e) {
     statusTxt.textContent = `Failed: ${e}`;
@@ -823,9 +830,9 @@ async function checkForUpdates(silent = false) {
       $("u-actions").classList.remove("hidden");
       updateDlg.showModal();
     } else {
-      if (statusEl) statusEl.textContent = `Amberline is up to date (v${APP_VERSION})`;
+      if (statusEl) statusEl.textContent = `Mistline is up to date (v${APP_VERSION})`;
       if (!silent) {
-        await message("You are using the latest version of Amberline.", { title: "Up to date", kind: "info" });
+        await message("You are using the latest version of Mistline.", { title: "Up to date", kind: "info" });
       }
     }
   } catch (e) {
@@ -1003,7 +1010,7 @@ $("s-save").onclick = () => {
   panes.find(p => p.id === paneId)?.collect?.();
   draft.active = draftId;
   store = draft;
-  localStorage.setItem("amberline.profiles", JSON.stringify(store));
+  setSaved("profiles", JSON.stringify(store));
   applyFont();
   showModel();
   dlg.close();
@@ -1012,9 +1019,9 @@ $("s-save").onclick = () => {
 /* ================= boot ================= */
 listen<Env>("agent-event", e => onEvent(e.payload));
 applyFont();
-setPanel(localStorage.getItem("amberline.panel") !== "0");
+setPanel(getSaved("panel") !== "0");
 (async () => {
-  const initialSpace = (localStorage.getItem("amberline.space") as "chats" | "projects") || "chats";
+  const initialSpace = (getSaved("space") as "chats" | "projects") || "chats";
   currentSpace = initialSpace;
   modeChats.classList.toggle("active", initialSpace === "chats");
   modeProjects.classList.toggle("active", initialSpace === "projects");
@@ -1027,7 +1034,7 @@ setPanel(localStorage.getItem("amberline.panel") !== "0");
     return;
   }
 
-  const savedForSpace = localStorage.getItem(`amberline.active.${initialSpace}`);
+  const savedForSpace = getSaved(`active.${initialSpace}`);
   const matching = order.filter(id => {
     const u = sessions.get(id);
     return u && (initialSpace === "chats" ? u.kind === "chat" : u.kind === "agent");
